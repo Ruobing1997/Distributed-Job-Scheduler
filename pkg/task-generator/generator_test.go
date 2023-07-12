@@ -25,11 +25,11 @@ func TestGenerateTask(t *testing.T) {
 	payload := "test payload"
 	callbackURL := "http://example.com/callback"
 
-	task := generateTask(name, taskType, schedule, payload, callbackURL)
+	task := GenerateTask(name, taskType, schedule, payload, callbackURL)
 
 	if task.Name != name || task.Type != taskType || task.Schedule != schedule ||
 		task.Payload != payload || task.CallbackURL != callbackURL {
-		t.Errorf("generateTask() failed, expected task with name: %s, "+
+		t.Errorf("GenerateTask() failed, expected task with name: %s, "+
 			"type: %s, schedule: %s, payload: %s, callbackURL: %s, got: %+v",
 			name, taskType, schedule, payload, callbackURL, task)
 	}
@@ -42,7 +42,7 @@ func TestMarshallTask(t *testing.T) {
 	payload := "test payload"
 	callbackURL := "http://example.com/callback"
 
-	task := generateTask(name, taskType, schedule, payload, callbackURL)
+	task := GenerateTask(name, taskType, schedule, payload, callbackURL)
 	taskJson := marshallTask(task)
 
 	if len(taskJson) == 0 {
@@ -71,7 +71,7 @@ func TestStoreDataToRedis(t *testing.T) {
 	payload := "test payload"
 	callbackURL := "http://example.com/callback"
 
-	task := generateTask(name, taskType, schedule, payload, callbackURL)
+	task := GenerateTask(name, taskType, schedule, payload, callbackURL)
 	taskJson := marshallTask(task)
 
 	assert.NoError(t, err)

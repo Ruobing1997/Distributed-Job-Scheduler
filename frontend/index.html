@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Scheduling Form</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        img {
+            width: 200px;
+            height: 200px;
+            object-fit: contain;
+        }
+        .job-type-container {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+        }
+        .job-type-option {
+            display: flex;
+            align-items: center;
+            margin-right: 16px;
+        }
+    </style>
+    <script>
+        function submitForm(event) {
+            event.preventDefault();
+
+            const formData = new FormData(event.target);
+            const data = {
+                name: formData.get("name"),
+                jobType: formData.get("jobType"),
+                schedule: formData.get("schedule"),
+                payload: formData.get("payload"),
+            };
+
+            fetch("http://localhost:8080/generate", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(data),
+            })
+            .then((response) => response.json())
+            .then((result) => {
+                console.log("Form submitted successfully:", result);
+            })
+            .catch((error) => {
+                console.error("Error submitting form:", error);
+            });
+        }
+    </script>
+</head>
+<body>
+    <img src="imgs/morefunIcon.png" alt="morefunIcon">
+    <form onsubmit="submitForm(event)">
+        <label for="name">Name:</label>
+        <input type="text" id="name" name="name" required>
+        <br><br>
+
+        <label for="jobType">Job Type:</label>
+        <div class="job-type-container">
+            <div class="job-type-option">
+                <input type="radio" id="alarm" name="jobType" value="Alarm" required>
+                <label for="alarm">Alarm</label>
+            </div>
+            <div class="job-type-option">
+                <input type="radio" id="concurrent" name="jobType" value="Concurrent">
+                <label for="concurrent">Concurrent</label>
+            </div>
+        </div>
+        <br>
+
+        <label for="schedule">Cron Expression:</label>
+        <input type="text" id="schedule" name="schedule" required>
+        <br><br>
+
+        <label for="payload">Payload:</label>
+        <input type="text" id="payload" name="payload" required>
+        <br><br>
+
+        <button type="submit">Generate</button>
+    </form>
+</body>
+</html>

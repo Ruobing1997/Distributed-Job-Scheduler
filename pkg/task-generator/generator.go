@@ -1,16 +1,18 @@
 package generator
 
 import (
-	"crypto/sha1"
+	"context"
+	"encoding/json"
 	"fmt"
+	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/database"
+	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
+	"log"
 	"time"
-
-	constants "git.woa.com/robingowang/MoreFun_SuperNova/utils"
 
 	"github.com/google/uuid"
 )
 
-func GenerateTask(name string, taskType string, schedule string,
+func generateTask(name string, taskType string, schedule string,
 	payload string, callbackURL string) constants.Task {
 	id := uuid.New().String()
 	task := constants.Task{
@@ -27,21 +29,28 @@ func GenerateTask(name string, taskType string, schedule string,
 		Result:      "",
 	}
 
-	shardID := hashIDtoShardID(id)
-	fmt.Println(shardID)
+	_ = storeDataToRedis(id, marshallTask(task))
+
 	return task
 }
 
-// hash the uuid to a shard id (0-shards amount)
-func hashIDtoShardID(id string) int {
-	hasher := sha1.New()
-	hasher.Write([]byte(id))
-	hashedUUID := hasher.Sum(nil)
+func marshallTask(task constants.Task) []byte {
+	taskJson, err := json.Marshal(task)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return taskJson
+}
 
-	hashedUUIDInt := int(hashedUUID[0]) |
-		int(hashedUUID[1])<<constants.EIGHTBIT |
-		int(hashedUUID[2])<<constants.SIXTEENBIT |
-		int(hashedUUID[3])<<constants.TWENTYFOURBIT
-	result := hashedUUIDInt % constants.SHARDSAMOUNT
-	return result
+// use redis ringOptions to store data, the ringOptions uses Consistent Hashing
+func storeDataToRedis(key string, value []byte) error {
+	redisRing := database.GetRedisRing()
+
+	err := redisRing.Set(context.Background(), key, value, 0).Err()
+	if err != nil {
+		return fmt.Errorf("failed to set key %s: %v", key, err)
+	}
+
+	fmt.Printf("Stored key %s with value %s to the Ring\n", key, value)
+	return nil
 }

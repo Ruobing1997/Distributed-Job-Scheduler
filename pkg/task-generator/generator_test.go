@@ -10,6 +10,15 @@ import (
 )
 
 func TestGenerateTask(t *testing.T) {
+	mr, err := miniredis.Run()
+
+	if err != nil {
+		panic(err)
+	}
+	defer mr.Close()
+
+	database.InitializeRedisRing(map[string]string{"shard1": mr.Addr()})
+
 	name := "Test Task"
 	taskType := "test"
 	schedule := "* * * * *"

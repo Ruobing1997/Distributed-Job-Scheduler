@@ -1,17 +1,17 @@
 package api
 
 import (
-	"fmt"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )
 
 type TaskRequest struct {
-	Name     string `json:"name"`
-	JobType  string `json:"jobType"`
-	Schedule string `json:"schedule"`
-	Payload  string `json:"payload"`
+	Name       string  `json:"name"`
+	JobType    int     `json:"jobType"`
+	Schedule   int     `json:"schedule"`
+	Importance float64 `json:"importance"`
+	Payload    string  `json:"payload"`
 }
 
 func GenerateTaskHandler(c *gin.Context) {
@@ -24,11 +24,16 @@ func GenerateTaskHandler(c *gin.Context) {
 	name := taskRequest.Name
 	taskType := taskRequest.JobType
 	schedule := taskRequest.Schedule
+	importance := taskRequest.Importance
 	payload := taskRequest.Payload
 
-	fmt.Printf("name: %s, taskType: %s, schedule: %s, payload: %s\n", name, taskType, schedule, payload)
-
-	task := generator.GenerateTask(name, taskType, schedule, payload, "")
+	task := generator.GenerateTask(
+		name,
+		taskType,
+		schedule,
+		importance,
+		payload,
+		"")
 
 	c.JSON(200, gin.H{
 		"task": task,

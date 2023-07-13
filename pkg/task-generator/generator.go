@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func GenerateTask(name string, taskType string, schedule string,
+func GenerateTask(name string, taskType int, schedule int, importance float64,
 	payload string, callbackURL string) constants.Task {
 	id := uuid.New().String()
 	task := constants.Task{
@@ -20,6 +20,7 @@ func GenerateTask(name string, taskType string, schedule string,
 		Name:        name,
 		Type:        taskType,
 		Schedule:    schedule,
+		Importance:  importance,
 		Payload:     payload,
 		CallbackURL: callbackURL,
 		Status:      0,

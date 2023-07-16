@@ -9,7 +9,7 @@ import (
 type TaskRequest struct {
 	Name       string  `json:"name"`
 	JobType    int     `json:"jobType"`
-	Schedule   int     `json:"schedule"`
+	Schedule   string  `json:"schedule"`
 	Importance float64 `json:"importance"`
 	Payload    string  `json:"payload"`
 }

@@ -8,7 +8,7 @@ type Task struct {
 	ID          string
 	Name        string
 	Type        int
-	Schedule    int // every X seconds or at a specific time in seconds (0 - 86400)
+	Schedule    string
 	Importance  float64
 	Payload     string
 	CallbackURL string
@@ -30,6 +30,8 @@ var typeMap = map[int]string{
 	0: "Alarm",
 	1: "Concurrent",
 }
+
+const MONGOURI = "mongodb://localhost:27017"
 
 const OFFSET = 10000
 

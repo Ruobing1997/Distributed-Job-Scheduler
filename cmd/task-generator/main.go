@@ -6,13 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type TaskRequest struct {
-	Name     string `json:"name"`
-	JobType  string `json:"jobType"`
-	Schedule string `json:"schedule"`
-	Payload  string `json:"payload"`
-}
-
 func main() {
 	r := gin.Default()
 

@@ -2,14 +2,22 @@ package task_manager
 
 import (
 	"context"
+	"database/sql"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/data-structure"
 	databasehandler "git.woa.com/robingowang/MoreFun_SuperNova/pkg/database"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/database/mySQL"
+	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/database/postgreSQL"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"log"
 	"time"
 )
+
+var timeTracker time.Time
+
+func Init() {
+	timeTracker = time.Now()
+}
 
 // TODO: remember to init the databases and redisPQ in main.go
 func CreateRedisPQ() {
@@ -32,7 +40,7 @@ func storeTasksToDB(client databasehandler.DatabaseClient, taskDB *constants.Tas
 	return nil
 }
 
-func HandleTasks(client databasehandler.DatabaseClient,
+func HandleIncomingTasks(client databasehandler.DatabaseClient,
 	name string, taskType int, cronExpression string,
 	payload string, callBackURL string, retries int) error {
 	// get task generated form generator
@@ -46,7 +54,7 @@ func HandleTasks(client databasehandler.DatabaseClient,
 	// generate task for cache:
 	taskCache := generateTaskCache(taskDB.ID, taskDB.ExecutionTime, taskDB.NextExecutionTime, taskDB.Payload)
 	// insert task to priority queue
-	// TODO: Currently only add tasks that will be executed in 1 minute, change DURATION when necessary
+	// TODO: Currently only add tasks that will be executed in 10 minute, change DURATION when necessary
 	if data_structure_redis.CheckTasksInDuration(taskCache, DURATION) {
 		addJob(taskCache)
 
@@ -54,6 +62,28 @@ func HandleTasks(client databasehandler.DatabaseClient,
 			taskCache.ID, data_structure_redis.GetQLength())
 	}
 	return nil
+}
+
+func AddTasksToDBWithTickers(db *sql.DB) {
+	tasks, _ := postgreSQL.GetTasksInInterval(db, time.Now(), time.Now().Add(DURATION))
+	for _, task := range tasks {
+		taskCache := generateTaskCache(task.ID, task.ExecutionTime, task.NextExecutionTime, task.Payload)
+		addJob(taskCache)
+	}
+}
+
+func SubscribeToRedisChannel() {
+	pubsub := data_structure_redis.GetClient().Subscribe(context.Background(), data_structure_redis.REDIS_CHANNEL)
+	_, err := pubsub.Receive(context.Background())
+	if err != nil {
+		log.Printf("redis subscribe failed: %v", err)
+	}
+	ch := pubsub.Channel()
+	for msg := range ch {
+		if msg.Payload == data_structure_redis.TASK_AVAILABLE {
+
+		}
+	}
 }
 
 func DispatchTasks() {

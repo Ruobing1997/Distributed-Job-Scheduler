@@ -1,5 +1,5 @@
 USE super_nova_test_1;
-CREATE TABLE task_db (
+CREATE TABLE IF NOT Exists task_db (
      id            VARCHAR(255) PRIMARY KEY,
      name          VARCHAR(255) NOT NULL,
      type          INT NOT NULL,

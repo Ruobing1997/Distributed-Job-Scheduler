@@ -7,6 +7,7 @@ import (
 	databasehandler "git.woa.com/robingowang/MoreFun_SuperNova/pkg/database"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	_ "github.com/go-sql-driver/mysql"
+	"log"
 )
 
 type Client struct {
@@ -17,7 +18,7 @@ type Client struct {
 func NewMySQLClient() *Client {
 	db, err := sql.Open(DBDRIVER, DBDATASOURCE)
 	if err != nil {
-		panic(err.Error())
+		log.Printf("Error opening database: %s", err.Error())
 	}
 	return &Client{db: db}
 }
@@ -58,4 +59,12 @@ func (c *Client) GetTaskByID(ctx context.Context, id string, args ...interface{}
 
 func (c *Client) Close() error {
 	return c.db.Close()
+}
+
+func GetDB() *sql.DB {
+	db, err := sql.Open(DBDRIVER, DBDATASOURCE)
+	if err != nil {
+		log.Printf("Error opening database: %s", err.Error())
+	}
+	return db
 }

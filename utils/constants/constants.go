@@ -39,6 +39,7 @@ type TaskCache struct {
 	Index             int
 	ExecutionTime     time.Time
 	NextExecutionTime time.Time
+	Payload           string
 }
 
 var statusMap = map[int]string{

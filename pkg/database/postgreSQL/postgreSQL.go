@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	databasehandler "git.woa.com/robingowang/MoreFun_SuperNova/pkg/database"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	_ "github.com/lib/pq"
@@ -62,9 +63,9 @@ func (c *Client) Close() error {
 	return c.db.Close()
 }
 
-func GetTasksInInterval(db *sql.DB, startTime time.Time, endTime time.Time) ([]*constants.TaskDB, error) {
-	query := `SELECT * FROM task_db WHERE execution_time BETWEEN $1 AND $2`
-	rows, err := db.Query(query, startTime, endTime)
+func GetTasksInInterval(db *sql.DB, startTime time.Time, endTime time.Time, timeTracker time.Time) ([]*constants.TaskDB, error) {
+	query := `SELECT * FROM task_db WHERE execution_time BETWEEN $1 AND $2 AND create_time >= $3`
+	rows, err := db.Query(query, startTime, endTime, timeTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -92,4 +93,13 @@ func GetDB() *sql.DB {
 		log.Printf("Error opening database: %s", err.Error())
 	}
 	return db
+}
+
+func UpdateTaskStatusByID(db *sql.DB, id string, status int) error {
+	query := `UPDATE task_db SET status = $1 WHERE id = $2`
+	_, err := db.Exec(query, status, id)
+	if err != nil {
+		return fmt.Errorf("error updating task status: %s", err.Error())
+	}
+	return nil
 }

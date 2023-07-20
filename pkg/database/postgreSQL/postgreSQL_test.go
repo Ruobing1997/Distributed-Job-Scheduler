@@ -27,7 +27,8 @@ func TestGetTasksInInterval(t *testing.T) {
 	// Call the GetTasksInInterval function
 	startTime := time.Date(2022, 1, 1, 12, 0, 0, 0, time.UTC)
 	endTime := time.Date(2022, 1, 1, 14, 0, 0, 0, time.UTC)
-	tasks, err := GetTasksInInterval(db, startTime, endTime)
+	timeTracker := time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC)
+	tasks, err := GetTasksInInterval(db, startTime, endTime, timeTracker)
 
 	if err != nil {
 		t.Fatalf("Failed to get tasks in interval: %v", err)

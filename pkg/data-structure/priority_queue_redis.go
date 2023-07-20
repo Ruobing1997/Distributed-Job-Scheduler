@@ -85,6 +85,18 @@ func RemoveJobByID(id string) {
 	}
 }
 
+func GetJobByID(id string) *constants.TaskCache {
+	jobData, err := client.HGet(context.Background(), REDIS_MAP_KEY, id).Result()
+	if err != nil {
+		log.Printf("get job data failed: %v", err)
+	}
+	var e constants.TaskCache
+	if err := json.Unmarshal([]byte(jobData), &e); err != nil {
+		log.Printf("unmarshal task cache failed: %v", err)
+	}
+	return &e
+}
+
 func CheckTasksInDuration(curTask *constants.TaskCache, duration time.Duration) bool {
 	now := time.Now()
 	return curTask.ExecutionTime.After(now) && curTask.ExecutionTime.Before(now.Add(duration))

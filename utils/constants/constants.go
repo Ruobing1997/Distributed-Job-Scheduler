@@ -35,11 +35,15 @@ func (t *TaskDB) Validate() error {
 }
 
 type TaskCache struct {
-	ID                string
-	Index             int
-	ExecutionTime     time.Time
-	NextExecutionTime time.Time
-	Payload           string
+	ID            string
+	Payload       string
+	ExecutionTime time.Time
+	Retries       int
+}
+
+type PayloadJson struct {
+	Type    int    `json:"type"`
+	Content string `json:"content"`
 }
 
 var statusMap = map[int]string{
@@ -60,8 +64,21 @@ var typeMap = map[int]string{
 	1: "Concurrent",
 }
 
+var payloadTypeMap = map[int]string{
+	0: "shell",
+	1: "python",
+	2: "email",
+}
+
+const SHELL = 0
+const PYTHON = 1
+const EMAIL = 2
+
 const MONGOURI = "mongodb://localhost:27017"
 
+const GRPC_TIMEOUT = time.Second
+const LEASE_DURATION = time.Second
+const LEASE_RENEW_INTERVAL = time.Second // renew lease every 1 second
 const OFFSET = 10000
 
 const SHARDSAMOUNT = 6

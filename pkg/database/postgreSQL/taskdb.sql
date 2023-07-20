@@ -1,4 +1,5 @@
 CREATE INDEX IF NOT EXISTS task_db_execution_time_brin_idx ON task_db USING BRIN (execution_time);
+CREATE INDEX IF NOT EXISTS task_db_create_time_brin_idx ON task_db USING BRIN (create_time);
 
 CREATE TABLE IF NOT EXISTS task_db (
    id VARCHAR(255) PRIMARY KEY,

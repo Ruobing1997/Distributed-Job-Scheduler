@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	task_manager "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-manager"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/redis/go-redis/v9"
 	"log"
@@ -14,7 +13,7 @@ import (
 var client *redis.Client
 var Qlen int64
 
-func Init() {
+func Init() *redis.Client {
 	client = redis.NewClient(&redis.Options{
 		Addr:     REDISPQ_Addr,
 		Password: REDISPQ_Password,
@@ -26,7 +25,7 @@ func Init() {
 		log.Printf("redis connection failed: %v", err)
 	}
 	Qlen = 0
-	go ListenForExpiryNotifications()
+	return client
 }
 
 func GetClient() *redis.Client {
@@ -99,9 +98,9 @@ func GetJobByID(id string) *constants.TaskCache {
 	return &e
 }
 
-func CheckTasksInDuration(curTask *constants.TaskCache, duration time.Duration) bool {
+func CheckTasksInDuration(executionTime time.Time, duration time.Duration) bool {
 	now := time.Now()
-	return curTask.ExecutionTime.After(now) && curTask.ExecutionTime.Before(now.Add(duration))
+	return executionTime.After(now) && executionTime.Before(now.Add(duration))
 }
 
 func GetQLength() int64 {
@@ -175,20 +174,6 @@ func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 		matureTasks = append(matureTasks, &e)
 	}
 	return matureTasks
-}
-
-func ListenForExpiryNotifications() {
-	pubsub := client.Subscribe(context.Background(), REDIS_EXPIRY_CHANNEL)
-	defer pubsub.Close()
-
-	for {
-		msg, err := pubsub.ReceiveMessage(context.Background())
-		if err != nil {
-			log.Printf("receive message failed: %v", err)
-			continue
-		}
-		task_manager.HandleExpiryTasks(msg)
-	}
 }
 
 func SetLeaseWithID(taskID string, duration time.Duration) error {

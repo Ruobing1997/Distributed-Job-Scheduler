@@ -21,7 +21,6 @@ func TestAddJobAndPopNextJob(t *testing.T) {
 		task := &constants.TaskCache{
 			ID:            "TestJob1",
 			ExecutionTime: time.Now().Add(time.Minute),
-			Payload:       "TestPayload1",
 		}
 
 		// Add the job
@@ -50,12 +49,10 @@ func TestAddJobAndPopNextJob(t *testing.T) {
 		task1 := &constants.TaskCache{
 			ID:            "TestJob2",
 			ExecutionTime: time.Now().Add(2 * time.Minute),
-			Payload:       "TestPayload2",
 		}
 		task2 := &constants.TaskCache{
 			ID:            "TestJob3",
 			ExecutionTime: time.Now().Add(1 * time.Minute),
-			Payload:       "TestPayload3",
 		}
 
 		// Add the jobs

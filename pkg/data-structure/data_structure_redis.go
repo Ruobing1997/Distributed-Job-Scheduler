@@ -28,10 +28,6 @@ func Init() *redis.Client {
 	return client
 }
 
-func GetClient() *redis.Client {
-	return client
-}
-
 func AddJob(e *constants.TaskCache) {
 	if (client.HExists(context.Background(), REDIS_MAP_KEY, e.ID)).Val() {
 		log.Printf("task %s already exists in redis", e.ID)
@@ -49,7 +45,7 @@ func AddJob(e *constants.TaskCache) {
 	Qlen++
 	client.HSet(context.Background(), REDIS_MAP_KEY, e.ID, data)
 
-	if checkWithinThreshold(e.ExecutionTime) {
+	if CheckWithinThreshold(e.ExecutionTime) {
 		client.Publish(context.Background(), REDIS_CHANNEL, TASK_AVAILABLE)
 	}
 }
@@ -121,11 +117,12 @@ func GetNextJob() *constants.TaskCache {
 		}
 	} else {
 		log.Printf("no task cache in redis")
+		return nil
 	}
 	return &e
 }
 
-func checkWithinThreshold(executionTime time.Time) bool {
+func CheckWithinThreshold(executionTime time.Time) bool {
 	return time.Until(executionTime) <= PROXIMITY_THRESHOLD
 }
 

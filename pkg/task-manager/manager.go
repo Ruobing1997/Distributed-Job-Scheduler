@@ -2,7 +2,6 @@ package task_manager
 
 import (
 	"context"
-	"database/sql"
 	data_structure_redis "git.woa.com/robingowang/MoreFun_SuperNova/pkg/data-structure"
 	databasehandler "git.woa.com/robingowang/MoreFun_SuperNova/pkg/database"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/database/mySQL"
@@ -14,20 +13,70 @@ import (
 	"github.com/robfig/cron/v3"
 	"log"
 	"strings"
+	"sync"
 	"time"
 )
 
-var timeTracker time.Time
-var databaseClient *postgreSQL.Client
-var mySQLClient *mySQL.Client
-var redisClient *redis.Client
+var (
+	timeTracker     time.Time
+	databaseClient  *postgreSQL.Client
+	mySQLClient     *mySQL.Client
+	redisClient     *redis.Client
+	redisFreeSignal chan struct{}
+)
 
 func Init() {
 	timeTracker = time.Now()
-	SubscribeToRedisChannel()
+	// TODO: make the user to choose database type
 	databaseClient = postgreSQL.NewpostgreSQLClient()
 	redisClient = data_structure_redis.Init()
 	go ListenForExpiryNotifications()
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				AddTasksFromDBWithTickers()
+			}
+		}
+	}()
+}
+
+func Start() {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ListenForExpiryNotifications()
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		SubscribeToRedisChannel()
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				AddTasksFromDBWithTickers()
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		MonitorHeadNode()
+	}()
+
+	wg.Wait()
 }
 
 func addJobToRedis(taskDB *constants.TaskDB) {
@@ -68,7 +117,7 @@ func HandleNewTasks(client databasehandler.DatabaseClient,
 	return nil
 }
 
-func AddTasksFromDBWithTickers(db *sql.DB) {
+func AddTasksFromDBWithTickers() {
 	tasks, _ := databaseClient.GetTasksInInterval(time.Now(), time.Now().Add(DURATION), timeTracker)
 	timeTracker = time.Now()
 	for _, task := range tasks {
@@ -77,7 +126,7 @@ func AddTasksFromDBWithTickers(db *sql.DB) {
 }
 
 func SubscribeToRedisChannel() {
-	pubsub := data_structure_redis.GetClient().Subscribe(context.Background(), data_structure_redis.REDIS_CHANNEL)
+	pubsub := redisClient.Subscribe(context.Background(), data_structure_redis.REDIS_CHANNEL)
 	_, err := pubsub.Receive(context.Background())
 	if err != nil {
 		log.Printf("redis subscribe failed: %v", err)
@@ -85,8 +134,10 @@ func SubscribeToRedisChannel() {
 	ch := pubsub.Channel()
 	for msg := range ch {
 		if msg.Payload == data_structure_redis.TASK_AVAILABLE {
+			redisFreeSignal <- struct{}{}
 			// check redis priority queue and dispatch tasks
 			executeMatureTasks()
+			<-redisFreeSignal
 		}
 	}
 }
@@ -102,6 +153,36 @@ func executeMatureTasks() {
 			log.Printf("dispatch task %s failed: %v", task.ID, err)
 		}
 		updateDatabaseWithDispatchResult(task, status)
+	}
+}
+
+func MonitorHeadNode() {
+	for {
+		if isRedisFree() {
+			headNodeTimer := time.NewTimer(1 * time.Minute)
+			select {
+			case <-headNodeTimer.C:
+				taskCache := GetNextJob()
+				if taskCache != nil &&
+					data_structure_redis.CheckWithinThreshold(taskCache.ExecutionTime) {
+					redisFreeSignal <- struct{}{}
+					executeMatureTasks()
+					<-redisFreeSignal
+				}
+			case <-redisFreeSignal:
+				headNodeTimer.Stop()
+				<-redisFreeSignal
+			}
+		}
+	}
+}
+
+func isRedisFree() bool {
+	select {
+	case <-redisFreeSignal:
+		return false
+	default:
+		return true
 	}
 }
 

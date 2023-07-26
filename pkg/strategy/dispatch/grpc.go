@@ -37,20 +37,20 @@ func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.T
 		ID:            in.Id,
 		Payload:       in.Payload,
 		ExecutionTime: in.ExecutionTime.AsTime(),
-		Retries:       int(in.MaxRetryCount),
+		RetriesLeft:   int(in.MaxRetryCount),
 	}
 
 	err := task_executor.ExecuteTask(task)
 	if err != nil {
-		return &pb.TaskResponse{Id: task.ID, Status: 3}, err
+		return &pb.TaskResponse{Id: task.ID, Status: constants.JOBFAILED}, err
 	}
-	return &pb.TaskResponse{Id: task.ID, Status: 2}, nil
+	return &pb.TaskResponse{Id: task.ID, Status: constants.JOBSUCCEED}, nil
 }
 
-func HandoutTasks(task *constants.TaskCache) (string, int, error) {
+func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
 	if err != nil {
-		log.Fatalf("did not connect: %v", err)
+		return task.ID, constants.JOBFAILED, fmt.Errorf("did not connect: %v", err)
 	}
 	defer conn.Close()
 	client := pb.NewTaskServiceClient(conn)
@@ -62,12 +62,12 @@ func HandoutTasks(task *constants.TaskCache) (string, int, error) {
 		Id:            task.ID,
 		Payload:       task.Payload,
 		ExecutionTime: timestamppb.New(task.ExecutionTime),
-		MaxRetryCount: int32(task.Retries),
+		MaxRetryCount: int32(task.RetriesLeft),
 	})
 
 	if err != nil {
 		// over time, no response
-		return task.ID, 3, fmt.Errorf("could not execute task: %v", err)
+		return task.ID, constants.JOBFAILED, fmt.Errorf("could not execute task: %v", err)
 	}
 	log.Printf("Task %s executed with status %d", r.Id, r.Status)
 	return r.Id, int(r.Status), nil

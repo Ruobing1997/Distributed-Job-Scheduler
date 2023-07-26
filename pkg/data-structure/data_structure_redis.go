@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	task_manager "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-manager"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/redis/go-redis/v9"
 	"log"
@@ -25,6 +26,7 @@ func Init() {
 		log.Printf("redis connection failed: %v", err)
 	}
 	Qlen = 0
+	go ListenForExpiryNotifications()
 }
 
 func GetClient() *redis.Client {
@@ -148,4 +150,52 @@ func GetJobsForDispatchWithBuffer() []*constants.TaskCache {
 		matureTasks = append(matureTasks, &e)
 	}
 	return matureTasks
+}
+
+func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
+	adjustedTime := time.Now().Add(-DISPATCHBUFFER)
+	var scoreRange = &redis.ZRangeBy{
+		Min: "-inf",
+		Max: fmt.Sprintf("%d", adjustedTime.Unix()),
+	}
+	results, err := client.ZRangeByScoreWithScores(context.Background(), REDIS_PQ_KEY, scoreRange).Result()
+	if err != nil {
+		log.Printf("get next job failed: %v", err)
+	}
+
+	var matureTasks []*constants.TaskCache
+	for _, result := range results {
+		var e constants.TaskCache
+		if err := json.Unmarshal([]byte(result.Member.(string)), &e); err != nil {
+			log.Printf("unmarshal task cache failed: %v", err)
+		}
+		client.ZRem(context.Background(), REDIS_PQ_KEY, result.Member)
+		client.HDel(context.Background(), REDIS_MAP_KEY, e.ID)
+		Qlen--
+		matureTasks = append(matureTasks, &e)
+	}
+	return matureTasks
+}
+
+func ListenForExpiryNotifications() {
+	pubsub := client.Subscribe(context.Background(), REDIS_EXPIRY_CHANNEL)
+	defer pubsub.Close()
+
+	for {
+		msg, err := pubsub.ReceiveMessage(context.Background())
+		if err != nil {
+			log.Printf("receive message failed: %v", err)
+			continue
+		}
+		task_manager.HandleExpiryTasks(msg)
+	}
+}
+
+func SetLeaseWithID(taskID string, duration time.Duration) error {
+	leaseKey := fmt.Sprintf("lease:task:%s", taskID)
+	err := client.SetEx(context.Background(), leaseKey, REDIS_LEASE_MAP_VALUE_PROCESSING, duration).Err()
+	if err != nil {
+		return fmt.Errorf("set lease failed: %v", err)
+	}
+	return nil
 }

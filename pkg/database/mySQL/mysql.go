@@ -11,7 +11,7 @@ import (
 )
 
 type Client struct {
-	db *sql.DB
+	Db *sql.DB
 }
 
 // NewMySQLClient initializes the connection to MySQL database.
@@ -20,7 +20,7 @@ func NewMySQLClient() *Client {
 	if err != nil {
 		log.Printf("Error opening database: %s", err.Error())
 	}
-	return &Client{db: db}
+	return &Client{Db: db}
 }
 
 func (c *Client) InsertTask(ctx context.Context, record databasehandler.DataRecord) error {
@@ -32,8 +32,8 @@ func (c *Client) InsertTask(ctx context.Context, record databasehandler.DataReco
     (id, name, type, schedule, payload, callback_url, status, execution_time, 
      next_execution_time, create_time, update_time, retries, result) 
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := c.db.ExecContext(ctx, query, taskDB.ID, taskDB.Name, taskDB.Type,
-		taskDB.Schedule, taskDB.Payload, taskDB.CallbackURL,
+	_, err := c.Db.ExecContext(ctx, query, taskDB.ID, taskDB.Name, taskDB.JobType,
+		taskDB.CronExpr, taskDB.Payload, taskDB.CallbackURL,
 		taskDB.Status, taskDB.ExecutionTime,
 		taskDB.CreateTime, taskDB.UpdateTime, taskDB.Retries, taskDB.Result)
 	if err != nil {
@@ -45,7 +45,7 @@ func (c *Client) InsertTask(ctx context.Context, record databasehandler.DataReco
 func (c *Client) GetTaskByID(ctx context.Context, id string, args ...interface{}) (databasehandler.DataRecord, error) {
 	query := `SELECT * FROM task_db WHERE id = ?`
 	taskDB := &constants.TaskDB{}
-	err := c.db.QueryRowContext(ctx, query, id).Scan(&taskDB.ID, &taskDB.Name, &taskDB.Type, &taskDB.Schedule,
+	err := c.Db.QueryRowContext(ctx, query, id).Scan(&taskDB.ID, &taskDB.Name, &taskDB.JobType, &taskDB.CronExpr,
 		&taskDB.Payload, &taskDB.CallbackURL, &taskDB.Status, &taskDB.ExecutionTime, &taskDB.NextExecutionTime,
 		&taskDB.CreateTime, &taskDB.UpdateTime, &taskDB.Retries, &taskDB.Result)
 	if err != nil {
@@ -58,7 +58,7 @@ func (c *Client) GetTaskByID(ctx context.Context, id string, args ...interface{}
 }
 
 func (c *Client) Close() error {
-	return c.db.Close()
+	return c.Db.Close()
 }
 
 func GetDB() *sql.DB {

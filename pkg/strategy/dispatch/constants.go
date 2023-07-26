@@ -7,8 +7,8 @@ const APPLICATION_JSON = "application/json"
 const POST = "POST"
 
 const (
-	WorkerFailed     = 0
+	JobFailed        = 0
 	JobDispatched    = 1
-	WorkerSucceed    = 2
+	JobSucceed       = 2
 	WorkerNoResponse = 3
 )

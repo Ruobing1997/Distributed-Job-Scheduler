@@ -31,8 +31,8 @@ func generateTaskDB(id string, name string, taskType int, cronExpression string,
 	taskDB := constants.TaskDB{
 		ID:                id,
 		Name:              name,
-		Type:              taskType,
-		Schedule:          cronExpression,
+		JobType:           taskType,
+		CronExpr:          cronExpression,
 		Payload:           payload,
 		CallbackURL:       callBackURL,
 		Status:            0,
@@ -44,6 +44,26 @@ func generateTaskDB(id string, name string, taskType int, cronExpression string,
 		Result:            0,
 	}
 	return &taskDB
+}
+
+// TODO: update content of task cache when determine the structure of task cache
+func GenerateTaskCache(id string, jobType int, cronExpr string,
+	executionTime time.Time, retriesLeft int, payload constants.PayloadJson) *constants.TaskCache {
+	return &constants.TaskCache{
+		ID:            id,
+		JobType:       jobType,
+		CronExpr:      cronExpr,
+		ExecutionTime: executionTime,
+		RetriesLeft:   retriesLeft,
+		Payload:       payload,
+	}
+}
+
+func GeneratePayloadJSON(executeType int, content string) *constants.PayloadJson {
+	return &constants.PayloadJson{
+		Type:    executeType,
+		Content: content,
+	}
 }
 
 func marshallTask(task constants.TaskDB) []byte {

@@ -13,12 +13,12 @@ import (
 func SendTasksToWorker(task *constants.TaskCache) (int, error) {
 	taskData, err := json.Marshal(task)
 	if err != nil {
-		return WorkerFailed, err
+		return JobFailed, err
 	}
 	req, err := http.NewRequest(POST, INVERTED_JSON_K8S_SERVICE_URL+TASK_CHANNEL,
 		bytes.NewBuffer(taskData))
 	if err != nil {
-		return WorkerFailed, err
+		return JobFailed, err
 	}
 
 	req.Header.Set("Content-Type", APPLICATION_JSON)
@@ -27,7 +27,7 @@ func SendTasksToWorker(task *constants.TaskCache) (int, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return WorkerFailed, err
+		return JobFailed, err
 	}
 	defer resp.Body.Close()
 
@@ -36,12 +36,12 @@ func SendTasksToWorker(task *constants.TaskCache) (int, error) {
 		decoder := json.NewDecoder(resp.Body)
 		err := decoder.Decode(&workerStatus)
 		if err != nil {
-			return WorkerFailed, err
+			return JobFailed, err
 		}
 		return workerStatus, nil
 
 	}
-	return WorkerFailed, nil
+	return JobFailed, nil
 }
 
 func WorkerProcessTasks(w http.ResponseWriter, r *http.Request) (int, error) {
@@ -54,7 +54,7 @@ func WorkerProcessTasks(w http.ResponseWriter, r *http.Request) (int, error) {
 	decoder := json.NewDecoder(r.Body)
 	err := decoder.Decode(&task)
 	if err != nil {
-		return WorkerFailed, err
+		return JobFailed, err
 	}
 
 	resultChannel := make(chan error)
@@ -66,8 +66,8 @@ func WorkerProcessTasks(w http.ResponseWriter, r *http.Request) (int, error) {
 	taskErr := <-resultChannel
 
 	if taskErr != nil {
-		return WorkerFailed, taskErr
+		return JobFailed, taskErr
 	}
 
-	return WorkerSucceed, nil
+	return JobSucceed, nil
 }

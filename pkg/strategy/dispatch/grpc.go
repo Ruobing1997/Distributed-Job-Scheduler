@@ -3,10 +3,10 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	data_structure_redis "git.woa.com/robingowang/MoreFun_SuperNova/pkg/data-structure"
 	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
 	task_executor "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-executor"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
-	task_manager "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-manager"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -82,16 +82,11 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 
 func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (*pb.RenewLeaseResponse, error) {
 	// worker should ask for a new lease before the current lease expires
-	// if the worker fails to do so, the task will be handed out to another worker depends on retry count
-	// if the worker fails to do so and the retry count is 0, the task will be marked as failed
-	currentLease := task_manager.GetLeaseByID(in.Id)
-	if time.Now().After(currentLease) {
+	err := data_structure_redis.SetLeaseWithID(in.Id, 2*time.Second)
+	if err != nil {
 		return &pb.RenewLeaseResponse{Success: false},
 			fmt.Errorf("lease for task %s has expired", in.Id)
 	}
-
-	newLease := time.Now().Add(constants.LEASE_DURATION)
-	task_manager.UpdateLeaseByID(in.Id, newLease)
 	return &pb.RenewLeaseResponse{Success: true}, nil
 }
 

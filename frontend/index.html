@@ -41,10 +41,12 @@
 
             const formData = new FormData(event.target);
             const data = {
-                name: formData.get("name"),
+                jobName: formData.get("jobName"),
                 jobType: formData.get("jobType"),
-                schedule: formData.get("schedule"),
-                payload: formData.get("payload"),
+                cronExpr: formData.get("Cron Expression"),
+                format: formData.get("format"),
+                script: formData.get("script"),
+                retries: formData.get("retries"),
             };
 
             fetch("http://localhost:8080/generate", {
@@ -67,30 +69,46 @@
 <body>
     <img src="imgs/morefunIcon.png" alt="morefunIcon">
     <form onsubmit="submitForm(event)">
-        <label for="name">Name:</label>
-        <input type="text" id="name" name="name" required>
+        <label for="jobName">JobName:</label>
+        <input type="text" id="jobName" name="jobName" required>
         <br><br>
 
         <label for="jobType">Job Type:</label>
         <div class="job-type-container">
             <div class="job-type-option">
-                <input type="radio" id="alarm" name="jobType" value="Alarm" required>
-                <label for="alarm">Alarm</label>
+                <input type="radio" id="onetime" name="jobType" value="0" required>
+                <label for="onetime">One Time</label>
             </div>
             <div class="job-type-option">
-                <input type="radio" id="concurrent" name="jobType" value="Concurrent">
-                <label for="concurrent">Concurrent</label>
+                <input type="radio" id="recur" name="jobType" value="1">
+                <label for="recur">Recur</label>
             </div>
         </div>
         <br>
 
-        <label for="schedule">Cron Expression:</label>
-        <input type="text" id="schedule" name="schedule" required>
+        <label for="cronExpr">Cron Expression:</label>
+        <input type="text" id="cronExpr" name="cronExpr" required>
         <br><br>
 
-        <label for="payload">Payload:</label>
-        <input type="text" id="payload" name="payload" required>
-        <br><br>
+        <fieldset>
+            <legend>Payload</legend>
+            <label for="format">format:</label>
+            <select id="format" name="format">
+                <option value="Python">Python</option>
+                <option value="Shell">Shell</option>
+                <option value="Email">Email</option>
+                <option value="Other">Other</option>
+            </select>
+            <br><br>
+
+            <label for="script">Input:</label>
+            <textarea id="script" name="script" rows="4" cols="50"></textarea>
+            <br><br>
+
+            <label for="retries">Retries:</label>
+            <input type="number" id="retries" name="retries" min="0" max="10"></input>
+            <br><br>
+        </fieldset>
 
         <button type="submit">Generate</button>
     </form>

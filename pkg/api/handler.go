@@ -7,11 +7,12 @@ import (
 )
 
 type TaskRequest struct {
-	Name       string  `json:"name"`
-	JobType    int     `json:"jobType"`
-	Schedule   string  `json:"schedule"`
-	Importance float64 `json:"importance"`
-	Payload    string  `json:"payload"`
+	JobName  string `json:"jobName"`
+	JobType  int    `json:"jobType"`
+	CronExpr string `json:"cronExpr"`
+	Format   int    `json:"format"`
+	Script   string `json:"script"`
+	Retries  int    `json:"retries"`
 }
 
 func GenerateTaskHandler(c *gin.Context) {
@@ -21,19 +22,20 @@ func GenerateTaskHandler(c *gin.Context) {
 		return
 	}
 
-	name := taskRequest.Name
-	taskType := taskRequest.JobType
-	schedule := taskRequest.Schedule
-	importance := taskRequest.Importance
-	payload := taskRequest.Payload
+	jobName := taskRequest.JobName
+	jobType := taskRequest.JobType
+	cronExpr := taskRequest.CronExpr
+	format := taskRequest.Format
+	script := taskRequest.Script
+	retries := taskRequest.Retries
 
 	task := generator.GenerateTask(
-		name,
-		taskType,
-		schedule,
-		importance,
-		payload,
-		"")
+		jobName,
+		jobType,
+		cronExpr,
+		format,
+		script,
+		retries)
 
 	c.JSON(200, gin.H{
 		"task": task,

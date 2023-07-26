@@ -13,7 +13,7 @@ func main() {
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"POST", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-JobType"},
+		AllowHeaders:     []string{"Origin", "Content-Format"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 	}))

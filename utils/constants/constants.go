@@ -7,27 +7,25 @@ import (
 
 type TaskDB struct {
 	ID                    string
-	Name                  string
+	JobName               string
 	JobType               int
 	CronExpr              string
-	Payload               PayloadJson
+	Payload               *Payload
 	CallbackURL           string
 	Status                int
 	ExecutionTime         time.Time
-	NextExecutionTime     time.Time
-	PreviousExecutionTime time.Time // 主要解决jiffy老师提到的问题：Leader故障切换期间到期护法的时间都被视为执行过
+	PreviousExecutionTime time.Time // 主要解决jiffy老师提到的问题：Leader故障切换期间到期的时间都被视为执行过
 	CreateTime            time.Time
 	UpdateTime            time.Time
-	Retries               int // TODO: User应该不需要看到这个，可以删掉
-	Result                int
+	Retries               int
 }
 
 func (t *TaskDB) Validate() error {
-	if t.Name == "" {
+	if t.JobName == "" {
 		return errors.New("name cannot be empty")
 	} else if t.JobType < 0 || t.JobType > 1 {
 		return errors.New("type must be 0 or 1")
-	} else if t.Payload == "" {
+	} else if t.Payload.Script == "" {
 		return errors.New("payload cannot be empty")
 	} else if t.Retries < 0 {
 		return errors.New("retries must be greater than or equal to 0")
@@ -39,14 +37,14 @@ type TaskCache struct {
 	ID            string
 	ExecutionTime time.Time
 	JobType       int
-	Payload       PayloadJson
+	Payload       *Payload
 	RetriesLeft   int
 	CronExpr      string
 }
 
-type PayloadJson struct {
-	Type    int    `json:"type"`
-	Content string `json:"content"`
+type Payload struct {
+	Format int    `json:"format"`
+	Script string `json:"script"`
 }
 
 type RunTimeTask struct {
@@ -54,9 +52,22 @@ type RunTimeTask struct {
 	ExecutionTime time.Time
 	JobType       int
 	JobStatus     int
-	Payload       PayloadJson
+	Payload       *Payload
 	RetriesLeft   int
 	CronExpr      string
+}
+
+func (t *RunTimeTask) Validate() error {
+	if t.JobType < 0 || t.JobType > 1 {
+		return errors.New("type must be 0 or 1")
+	} else if t.Payload.Script == "" {
+		return errors.New("payload cannot be empty")
+	} else if t.RetriesLeft < 0 {
+		return errors.New("retries must be greater than or equal to 0")
+	} else if t.JobStatus < 0 || t.JobStatus > 4 {
+		return errors.New("status must be 0, 1, 2, 3 or 4")
+	}
+	return nil
 }
 
 var statusMap = map[int]string{
@@ -64,6 +75,7 @@ var statusMap = map[int]string{
 	1: "Running",
 	2: "Completed",
 	3: "Failed",
+	4: "ReEntered",
 }
 
 var resultMap = map[int]string{
@@ -85,6 +97,7 @@ var payloadTypeMap = map[int]string{
 
 const JOBSUCCEED = 2
 const JOBFAILED = 3
+const JOBREENTERED = 4
 
 const SHELL = 0
 const PYTHON = 1
@@ -105,5 +118,5 @@ const EIGHTBIT = 8
 const SIXTEENBIT = 16
 const TWENTYFOURBIT = 24
 const REDISPORTOFFSET = 6900
-const RUNNING_JOBS_RECORD = "execution_record"
-const TASKS_FULL_RECORD = "task_db"
+const RUNNING_JOBS_RECORD = "running_tasks_record"
+const TASKS_FULL_RECORD = "job_full_info"

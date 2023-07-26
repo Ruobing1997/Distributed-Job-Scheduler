@@ -2,7 +2,6 @@ package task_executor
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
@@ -19,18 +18,14 @@ func ExecuteTask(task *constants.TaskCache) error {
 
 	go MonitorLease(ctx, task.ID)
 
-	var payloadJson constants.PayloadJson
-	err := json.Unmarshal([]byte(task.Payload), &payloadJson)
-	if err != nil {
-		return fmt.Errorf("unmarshal payload failed: %v", err)
-	}
-	switch payloadJson.Type {
+	var err error
+	switch task.Payload.Format {
 	case constants.SHELL:
-		err = executeScript(payloadJson.Content, constants.SHELL)
+		err = executeScript(task.Payload.Script, constants.SHELL)
 	case constants.PYTHON:
-		err = executeScript(payloadJson.Content, constants.PYTHON)
+		err = executeScript(task.Payload.Script, constants.PYTHON)
 	case constants.EMAIL:
-		err = executeEmail(payloadJson.Content)
+		err = executeEmail(task.Payload.Script)
 	}
 	if err != nil {
 		return fmt.Errorf("error executing task: %v", err)

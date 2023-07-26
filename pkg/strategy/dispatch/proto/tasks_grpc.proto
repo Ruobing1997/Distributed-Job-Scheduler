@@ -12,9 +12,14 @@ service LeaseService {
   rpc RenewLease(RenewLeaseRequest) returns (RenewLeaseResponse);
 }
 
+message Payload {
+  int32 format = 1;
+  string script = 2;
+}
+
 message TaskRequest {
   string id = 1;
-  string payload = 2;
+  Payload payload = 2;
   google.protobuf.Timestamp execution_time = 3;
   int32 max_retry_count = 4;
 }

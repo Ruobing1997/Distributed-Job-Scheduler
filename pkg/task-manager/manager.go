@@ -19,7 +19,7 @@ import (
 
 var timeTracker time.Time
 var taskIDToLeaseMap map[string]time.Time
-var postgreSQLClient *postgreSQL.Client
+var client *postgreSQL.Client
 var mySQLClient *mySQL.Client
 
 func Init() {
@@ -27,7 +27,7 @@ func Init() {
 	taskIDToLeaseMap = make(map[string]time.Time)
 	InitRedisDataStructure()
 	SubscribeToRedisChannel()
-	postgreSQLClient = postgreSQL.NewpostgreSQLClient()
+	client = postgreSQL.NewpostgreSQLClient()
 }
 
 func GetLeaseByID(taskID string) time.Time {
@@ -51,23 +51,15 @@ func GetNextJob() *constants.TaskCache {
 	return data_structure_redis.PopNextJob()
 }
 
-func storeTaskToDB(client databasehandler.DatabaseClient, taskDB *constants.TaskDB) error {
-	err := client.InsertTask(context.Background(), taskDB)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// HandleNewTasks handles new tasks from API
+// HandleNewTasks handles new tasks from API,  这里应该是入口函数。主要做创建任务的逻辑
 func HandleNewTasks(client databasehandler.DatabaseClient,
 	name string, taskType int, cronExpression string,
-	payload string, callBackURL string, retries int) error {
+	format int, script string, callBackURL string, retries int) error {
 	// get task generated form generator
 	taskDB := generator.GenerateTask(name, taskType,
-		cronExpression, payload, callBackURL, retries)
+		cronExpression, format, script, retries)
 	// insert task to database
-	err := storeTaskToDB(client, taskDB)
+	err := client.InsertTask(context.Background(), constants.TASKS_FULL_RECORD, taskDB)
 	if err != nil {
 		return err
 	}
@@ -90,7 +82,7 @@ func HandleNewTasks(client databasehandler.DatabaseClient,
 }
 
 func AddTasksFromDBWithTickers(db *sql.DB) {
-	tasks, _ := postgreSQL.GetTasksInInterval(db, time.Now(), time.Now().Add(DURATION), timeTracker)
+	tasks, _ := client.GetTasksInInterval(time.Now(), time.Now().Add(DURATION), timeTracker)
 	timeTracker = time.Now()
 	for _, task := range tasks {
 		taskCache := generator.GenerateTaskCache(
@@ -117,13 +109,14 @@ func SubscribeToRedisChannel() {
 func executeMatureTasks() {
 	matureTasks := data_structure_redis.PopJobsForDispatchWithBuffer()
 	for _, task := range matureTasks {
+		// TODO: need to update the lease time, the current duration is 2 seconds
+		data_structure_redis.SetLeaseWithID(task.ID, 2*time.Second)
 		// TODO: _ is the workerID, currently not used, will used for routing key in future
 		_, status, err := dispatch.HandoutTasksForExecuting(task)
-		UpdateLeaseByID(task.ID, time.Now().Add(2*time.Second))
-		// TODO: update db and remove the task from the lease map when the task is finished
-		updateLeaseMapWithDispatchResult(task, status)
+		if err != nil {
+			log.Printf("dispatch task %s failed: %v", task.ID, err)
+		}
 		updateDatabaseWithDispatchResult(task, status)
-		updateRedisPQWithDispatchResult(task, status)
 	}
 }
 
@@ -145,13 +138,29 @@ func updateDatabaseWithDispatchResult(task *constants.TaskCache, jobStatusCode i
 		// update task status to 1
 		// happens once the job is dispatched to worker
 		// only update the task_db table in postgresql
-		postgreSQLClient.UpdateExecutionRecordStatus(task.ID, jobStatusCode)
+		client.UpdateByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID, map[string]interface{}{"job_status": jobStatusCode})
 	case dispatch.JobSucceed:
 		// update task status to 2 in task_db, the task should be deleted from ExecutionRecord
 		// TODO: Integrate tables' manipulation together, currently we have two functions do similar thing
-		postgreSQLClient.DeleteExecutionRecordByID(task.ID)
-		postgreSQLClient.UpdateTaskDBTaskStatusByID(task.ID, jobStatusCode)
-		// TODO: need to reenter the recur job
+		client.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID)
+		if task.JobType == constants.Recurring {
+			// it is recur job, update execution time, update time, status, (previous execution time) may not need, since we have update time
+			cronExpr := task.CronExpr
+			newExecutionTime := generator.DecryptCronExpress(cronExpr)
+			updateVars := map[string]interface{}{
+				"execution_time": newExecutionTime,
+				"update_time":    time.Now(),
+				"status":         constants.JOBREENTERED,
+			}
+			client.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID, updateVars)
+		} else {
+			// if it is one time job, only update the task_db table
+			updateVars := map[string]interface{}{
+				"update_time": time.Now(),
+				"status":      constants.JOBSUCCEED,
+			}
+			client.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID, updateVars)
+		}
 		// happens once the job is completed
 		// update task_db and execution_record, delete the task from redis priority queue -> no need, it is already popped
 	case dispatch.JobFailed:
@@ -165,25 +174,26 @@ func updateDatabaseWithDispatchResult(task *constants.TaskCache, jobStatusCode i
 
 		if checkJobCompletelyFailed(task) {
 			// task completely failed need to update all information for report user.
-			postgreSQLClient.DeleteExecutionRecordByID(task.ID)
-			postgreSQLClient.UpdateTaskDBTaskStatusByID(task.ID, jobStatusCode)
+			client.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID)
+			client.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID,
+				map[string]interface{}{"job_status": jobStatusCode})
 		} else {
 			// task not completely failed, update the retries left, time
 			// and add to redis priority queue
-			Reschedule(task)
+			RescheduleFailedJobs(task)
 		}
 	}
 
 }
 
-// Reschedule reenter the task to queue and update the retries
-func Reschedule(task *constants.TaskCache) {
+// RescheduleFailedJobs reenter the task to queue and update the retries
+func RescheduleFailedJobs(task *constants.TaskCache) {
 	curRetries := task.RetriesLeft - 1
-	postgreSQLClient.UpdateByID(constants.RUNNING_JOBS_RECORD, task.ID,
+	client.UpdateByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID,
 		map[string]interface{}{"retries_left": curRetries})
 	newExecutionTime, _ := cron.ParseStandard(task.CronExpr)
 	newNextExecutionTime := newExecutionTime.Next(time.Now())
-	err := postgreSQLClient.UpdateByID(constants.TASKS_FULL_RECORD, task.ID,
+	err := client.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID,
 		map[string]interface{}{"retries_left": curRetries,
 			"execution_time": newNextExecutionTime})
 	task.ExecutionTime = newNextExecutionTime
@@ -247,14 +257,16 @@ func HandleUnRenewLeaseJobThroughDB(id string) error {
 	// if job type is one time, directly return fail
 	// if job type is recur, check retry times
 	// if > 0, reenter queue, update redis, db; otherwise return fail
-	runTimeTask, err := postgreSQLClient.GetRuntimeJobInfoByID(id)
+	record, err := client.GetTaskByID(context.Background(), constants.RUNNING_JOBS_RECORD, id)
+	runTimeTask := record.(*constants.RunTimeTask)
 	if err != nil {
 		return err
 	}
 	if checkJobCompletelyFailed(runTimeTask) {
 		// task completely failed need to update all information for report user.
-		postgreSQLClient.DeleteExecutionRecordByID(runTimeTask.ID)
-		postgreSQLClient.UpdateTaskDBTaskStatusByID(runTimeTask.ID, constants.JOBFAILED)
+		client.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, runTimeTask.ID)
+		client.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD,
+			runTimeTask.ID, map[string]interface{}{"job_status": constants.JOBFAILED})
 	} else {
 		// task not completely failed, update the retries left
 		task := generator.GenerateTaskCache(
@@ -265,7 +277,7 @@ func HandleUnRenewLeaseJobThroughDB(id string) error {
 			runTimeTask.RetriesLeft,
 			runTimeTask.Payload,
 		)
-		Reschedule(task)
+		RescheduleFailedJobs(task)
 	}
 	return nil
 }

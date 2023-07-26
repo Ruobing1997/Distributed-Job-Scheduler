@@ -5,6 +5,7 @@ import (
 	"fmt"
 	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
 	task_executor "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-executor"
+	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	task_manager "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-manager"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"google.golang.org/grpc"
@@ -33,9 +34,10 @@ func Init() {
 }
 
 func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.TaskResponse, error) {
+	payload := generator.GeneratePayload(int(in.Payload.Format), in.Payload.Script)
 	task := &constants.TaskCache{
 		ID:            in.Id,
-		Payload:       in.Payload,
+		Payload:       payload,
 		ExecutionTime: in.ExecutionTime.AsTime(),
 		RetriesLeft:   int(in.MaxRetryCount),
 	}
@@ -58,9 +60,14 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), constants.GRPC_TIMEOUT)
 	defer cancel()
 
+	payload := &pb.Payload{
+		Format: int32(task.Payload.Format),
+		Script: task.Payload.Script,
+	}
+
 	r, err := client.ExecuteTask(ctx, &pb.TaskRequest{
 		Id:            task.ID,
-		Payload:       task.Payload,
+		Payload:       payload,
 		ExecutionTime: timestamppb.New(task.ExecutionTime),
 		MaxRetryCount: int32(task.RetriesLeft),
 	})

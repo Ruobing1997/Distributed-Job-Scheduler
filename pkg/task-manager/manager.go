@@ -2,9 +2,8 @@ package task_manager
 
 import (
 	"context"
+	"fmt"
 	data_structure_redis "git.woa.com/robingowang/MoreFun_SuperNova/pkg/data-structure"
-	databasehandler "git.woa.com/robingowang/MoreFun_SuperNova/pkg/database"
-	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/database/mySQL"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/database/postgreSQL"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
@@ -18,11 +17,10 @@ import (
 )
 
 var (
-	timeTracker     time.Time
-	databaseClient  *postgreSQL.Client
-	mySQLClient     *mySQL.Client
-	redisClient     *redis.Client
-	redisFreeSignal chan struct{}
+	timeTracker        time.Time
+	databaseClient     *postgreSQL.Client
+	redisClient        *redis.Client
+	testMessageChannel = make(chan string)
 )
 
 func Init() {
@@ -30,36 +28,31 @@ func Init() {
 	// TODO: make the user to choose database type
 	databaseClient = postgreSQL.NewpostgreSQLClient()
 	redisClient = data_structure_redis.Init()
-	go ListenForExpiryNotifications()
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				AddTasksFromDBWithTickers()
-			}
-		}
-	}()
 }
 
 func Start() {
+	startedChan := make(chan bool, 4)
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	startGoroutine := func(f func(chan bool)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f(startedChan)
+		}()
+	}
+
+	startGoroutine(func(ch chan bool) {
+		ch <- true
 		ListenForExpiryNotifications()
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	startGoroutine(func(ch chan bool) {
+		ch <- true
 		SubscribeToRedisChannel()
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	startGoroutine(func(ch chan bool) {
+		ch <- true
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -68,19 +61,20 @@ func Start() {
 				AddTasksFromDBWithTickers()
 			}
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	startGoroutine(func(ch chan bool) {
+		ch <- true
 		MonitorHeadNode()
-	}()
+	})
 
-	wg.Wait()
+	for i := 0; i < 4; i++ {
+		<-startedChan
+	}
 }
 
 func addJobToRedis(taskDB *constants.TaskDB) {
-	// generate task for cache:
+	// generate update for cache:
 	taskCache := generator.GenerateTaskCache(
 		taskDB.ID,
 		taskDB.JobType,
@@ -93,28 +87,86 @@ func addJobToRedis(taskDB *constants.TaskDB) {
 		taskCache.ID, data_structure_redis.GetQLength())
 }
 
-func GetNextJob() *constants.TaskCache {
-	return data_structure_redis.PopNextJob()
-}
-
 // HandleNewTasks handles new tasks from API,  这里应该是入口函数。主要做创建任务的逻辑
-func HandleNewTasks(client databasehandler.DatabaseClient,
-	name string, taskType int, cronExpression string,
-	format int, script string, callBackURL string, retries int) error {
-	// get task generated form generator
+func HandleNewTasks(name string, taskType int, cronExpression string,
+	format int, script string, callBackURL string, retries int) (string, error) {
+	// get update generated form generator
 	taskDB := generator.GenerateTask(name, taskType,
 		cronExpression, format, script, retries)
-	// insert task to database
-	err := client.InsertTask(context.Background(), constants.TASKS_FULL_RECORD, taskDB)
+	// insert update to database
+	err := databaseClient.InsertTask(context.Background(), constants.TASKS_FULL_RECORD, taskDB)
 	if err != nil {
-		return err
+		return "nil", err
 	}
 	// TODO: Currently only add tasks that will be executed in 10 minute, change DURATION when necessary
 	if data_structure_redis.CheckTasksInDuration(taskDB.ExecutionTime, DURATION) {
-		// insert task to priority queue
+		// insert update to priority queue
 		addJobToRedis(taskDB)
 	}
+	return callBackURL, nil
+}
+
+func HandleDeleteTasks(taskID string) error {
+	// if the update is running, stop it
+	// check the running_tasks_record board to see the job is running or not
+	record, err := databaseClient.GetTaskByID(context.Background(), constants.RUNNING_JOBS_RECORD, taskID)
+	if err != nil {
+		// apply the same logic as the following
+		// if the update is in redis priority queue, delete it and delete it from database
+		// if the update is in database, delete it from database
+		data_structure_redis.RemoveJobByID(taskID)
+		err := databaseClient.DeleteByID(context.Background(), constants.TASKS_FULL_RECORD, taskID)
+		if err != nil {
+			return err
+		} else {
+			return nil
+		}
+	} else {
+		// record found, stop the job
+		runTimeJob := record.(*constants.RunTimeTask)
+		workerId, status, err := dispatch.StopRunningTask(runTimeJob)
+		log.Printf("workerId: %s, status: %s, err: %v", workerId, status, err)
+		return err
+	}
+}
+
+func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
+	// do nothing when the update is running, report the user cannot update the update when it is running
+	// if the update is in redis priority queue, update it and update it in database
+	data_structure_redis.RemoveJobByID(taskID)
+	var taskCache *constants.TaskCache
+	taskCache.ID = taskID
+	for key, value := range args {
+		switch key {
+		case "ExecutionTime":
+			taskCache.ExecutionTime = value.(time.Time)
+		case "JobType":
+			taskCache.JobType = value.(int)
+		case "execute_format":
+			taskCache.Payload.Format = value.(int)
+		case "execute_script":
+			taskCache.Payload.Script = value.(string)
+		case "RetriesLeft":
+			taskCache.RetriesLeft = value.(int)
+		case "CronExpr":
+			taskCache.CronExpr = value.(string)
+		}
+	}
+	data_structure_redis.AddJob(taskCache)
+	// if the update is in database, update it in database
+	err := databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, taskID, args)
+	if err != nil {
+		return fmt.Errorf("update update %s failed: %v", taskID, err)
+	}
 	return nil
+}
+
+func HandleGetTasks(taskID string) (*constants.TaskDB, error) {
+	record, err := databaseClient.GetTaskByID(context.Background(), constants.TASKS_FULL_RECORD, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return record.(*constants.TaskDB), nil
 }
 
 func AddTasksFromDBWithTickers() {
@@ -134,10 +186,12 @@ func SubscribeToRedisChannel() {
 	ch := pubsub.Channel()
 	for msg := range ch {
 		if msg.Payload == data_structure_redis.TASK_AVAILABLE {
-			redisFreeSignal <- struct{}{}
+			fmt.Println("redis channel received: ", msg.Payload)
 			// check redis priority queue and dispatch tasks
 			executeMatureTasks()
-			<-redisFreeSignal
+
+			// TODO: Remove the following test channel msg:
+			testMessageChannel <- msg.Payload
 		}
 	}
 }
@@ -145,44 +199,31 @@ func SubscribeToRedisChannel() {
 func executeMatureTasks() {
 	matureTasks := data_structure_redis.PopJobsForDispatchWithBuffer()
 	for _, task := range matureTasks {
+		fmt.Println("dispatching update: ", task.ID)
 		// TODO: need to update the lease time, the current duration is 2 seconds
 		data_structure_redis.SetLeaseWithID(task.ID, 2*time.Second)
 		// TODO: _ is the workerID, currently not used, will used for routing key in future
 		_, status, err := dispatch.HandoutTasksForExecuting(task)
 		if err != nil {
-			log.Printf("dispatch task %s failed: %v", task.ID, err)
+			log.Printf("dispatch update %s failed: %v", task.ID, err)
 		}
 		updateDatabaseWithDispatchResult(task, status)
 	}
 }
 
 func MonitorHeadNode() {
+	log.Println("Start monitoring head node")
+	headNodeTicker := time.NewTicker(1 * time.Second)
+	defer headNodeTicker.Stop()
 	for {
-		if isRedisFree() {
-			headNodeTimer := time.NewTimer(1 * time.Minute)
-			select {
-			case <-headNodeTimer.C:
-				taskCache := GetNextJob()
-				if taskCache != nil &&
-					data_structure_redis.CheckWithinThreshold(taskCache.ExecutionTime) {
-					redisFreeSignal <- struct{}{}
-					executeMatureTasks()
-					<-redisFreeSignal
-				}
-			case <-redisFreeSignal:
-				headNodeTimer.Stop()
-				<-redisFreeSignal
+		select {
+		case <-headNodeTicker.C:
+			log.Println("Head node timer is triggered")
+			taskCache := data_structure_redis.GetNextJob()
+			if taskCache != nil && data_structure_redis.CheckWithinThreshold(taskCache.ExecutionTime) {
+				executeMatureTasks()
 			}
 		}
-	}
-}
-
-func isRedisFree() bool {
-	select {
-	case <-redisFreeSignal:
-		return false
-	default:
-		return true
 	}
 }
 
@@ -190,12 +231,12 @@ func updateDatabaseWithDispatchResult(task *constants.TaskCache, jobStatusCode i
 	switch jobStatusCode {
 	case dispatch.JobDispatched:
 		// designed for future use, with grpc we will get response in sync manner
-		// update task status to 1
+		// update update status to 1
 		// happens once the job is dispatched to worker
 		// only update the task_db table in postgresql
 		databaseClient.UpdateByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID, map[string]interface{}{"job_status": jobStatusCode})
 	case dispatch.JobSucceed:
-		// the task should be deleted from ExecutionRecord
+		// the update should be deleted from ExecutionRecord
 		databaseClient.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID)
 		if task.JobType == constants.Recurring {
 			// it is recur job, update execution time, update time, status, (previous execution time) may not need, since we have update time
@@ -219,16 +260,16 @@ func updateDatabaseWithDispatchResult(task *constants.TaskCache, jobStatusCode i
 			databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID, updateVars)
 		}
 	case dispatch.JobFailed:
-		// update task status to 3
-		// task_db only update when the task is completely failed (retries == 0 or outdated)
+		// update update status to 3
+		// task_db only update when the update is completely failed (retries == 0 or outdated)
 
 		if checkJobCompletelyFailed(task) {
-			// task completely failed need to update all information for report user.
+			// update completely failed need to update all information for report user.
 			databaseClient.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID)
 			databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID,
 				map[string]interface{}{"job_status": jobStatusCode})
 		} else {
-			// task not completely failed, update the retries left, time
+			// update not completely failed, update the retries left, time
 			// and add to redis priority queue
 			RescheduleFailedJobs(task)
 		}
@@ -236,7 +277,7 @@ func updateDatabaseWithDispatchResult(task *constants.TaskCache, jobStatusCode i
 
 }
 
-// RescheduleFailedJobs reenter the task to queue and update the retries
+// RescheduleFailedJobs reenter the update to queue and update the retries
 func RescheduleFailedJobs(task *constants.TaskCache) {
 	curRetries := task.RetriesLeft - 1
 	databaseClient.UpdateByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID,
@@ -256,16 +297,16 @@ func checkJobCompletelyFailed(data interface{}) bool {
 	jobType, retriesLeft, executionTime := getJobInfo(data)
 	if jobType == constants.OneTime {
 		if checkJobOutdated(executionTime) {
-			// task completely failed need to update all information for report user.
+			// update completely failed need to update all information for report user.
 			return true
 		}
 	}
-	// it will be either the task is recurring or task is one time but not outdated,
-	// we check retries left. If retries left is <= 0, the task is completely failed
+	// it will be either the update is recurring or update is one time but not outdated,
+	// we check retries left. If retries left is <= 0, the update is completely failed
 	return retriesLeft <= 0
 }
 
-// check if the task is outdated, current time is later than the execution time
+// check if the update is outdated, current time is later than the execution time
 func checkJobOutdated(executionTime time.Time) bool {
 	return executionTime.Before(time.Now())
 }
@@ -273,7 +314,7 @@ func checkJobOutdated(executionTime time.Time) bool {
 func dispatchTasksIJson(task *constants.TaskCache) {
 	workerStatusCode, err := dispatch.SendTasksToWorker(task)
 	if err != nil {
-		log.Printf("dispatch task %s failed: %v", task.ID, err)
+		log.Printf("dispatch update %s failed: %v", task.ID, err)
 		return
 	}
 	updateDatabaseWithDispatchResult(task, workerStatusCode)
@@ -281,9 +322,9 @@ func dispatchTasksIJson(task *constants.TaskCache) {
 
 // HandleExpiryTasks handles the expiry tasks
 func HandleExpiryTasks(msg *redis.Message) {
-	// The key format is "lease:task:<task_id>"
-	if strings.HasPrefix(msg.Payload, "lease:task:") {
-		taskID := strings.TrimPrefix(msg.Payload, "lease:task:")
+	// The key format is "lease:update:<task_id>"
+	if strings.HasPrefix(msg.Payload, "lease:update:") {
+		taskID := strings.TrimPrefix(msg.Payload, "lease:update:")
 		log.Printf("Task %s is expired", taskID)
 		HandleUnRenewLeaseJobThroughDB(taskID)
 	}
@@ -300,12 +341,12 @@ func HandleUnRenewLeaseJobThroughDB(id string) error {
 		return err
 	}
 	if checkJobCompletelyFailed(runTimeTask) {
-		// task completely failed need to update all information for report user.
+		// update completely failed need to update all information for report user.
 		databaseClient.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, runTimeTask.ID)
 		databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD,
 			runTimeTask.ID, map[string]interface{}{"job_status": constants.JOBFAILED})
 	} else {
-		// task not completely failed, update the retries left
+		// update not completely failed, update the retries left
 		task := generator.GenerateTaskCache(
 			runTimeTask.ID,
 			runTimeTask.JobType,
@@ -342,4 +383,18 @@ func ListenForExpiryNotifications() {
 		}
 		HandleExpiryTasks(msg)
 	}
+}
+
+func RegisterUser(userInfo *constants.UserInfo) error {
+	err := databaseClient.InsertUser(context.Background(), userInfo)
+	if err != nil {
+		return err
+	} else {
+		return nil
+	}
+}
+
+func LoginUser(username string, password string) (bool, error) {
+	isValid, err := databaseClient.IsValidCredential(context.Background(), username, password)
+	return isValid, err
 }

@@ -72,20 +72,32 @@ func (c *Client) GetTaskByID(ctx context.Context, table string, id string, args 
 	case constants.TASKS_FULL_RECORD:
 		query := `SELECT * FROM job_full_info WHERE id = $1`
 		taskDB := constants.TaskDB{}
+		var format int
+		var script string
 		err := c.db.QueryRowContext(ctx, query, id).Scan(&taskDB.ID, &taskDB.JobName, &taskDB.JobType, &taskDB.CronExpr,
-			&taskDB.Payload, &taskDB.CallbackURL, &taskDB.Status, &taskDB.ExecutionTime,
+			&format, &script, &taskDB.CallbackURL, &taskDB.Status, &taskDB.ExecutionTime,
 			&taskDB.CreateTime, &taskDB.UpdateTime, &taskDB.Retries)
 		if err != nil {
 			return nil, err
 		}
+		taskDB.Payload = &constants.Payload{
+			Format: format,
+			Script: script,
+		}
 		return &taskDB, nil
 	case constants.RUNNING_JOBS_RECORD:
-		query := `SELECT * FROM job_full_info WHERE id = $1`
+		query := `SELECT * FROM running_tasks_record WHERE id = $1`
 		var runtimeJobInfo constants.RunTimeTask
-		err := c.db.QueryRowContext(ctx, query, id).Scan(&runtimeJobInfo.ID, &runtimeJobInfo.JobType,
-			&runtimeJobInfo.JobStatus, &runtimeJobInfo.RetriesLeft)
+		var format int
+		var script string
+		err := c.db.QueryRowContext(ctx, query, id).Scan(&runtimeJobInfo.ID, &runtimeJobInfo.ExecutionTime, &runtimeJobInfo.JobType,
+			&runtimeJobInfo.JobStatus, &format, &script, &runtimeJobInfo.RetriesLeft, &runtimeJobInfo.CronExpr)
 		if err != nil {
 			return nil, err
+		}
+		runtimeJobInfo.Payload = &constants.Payload{
+			Format: format,
+			Script: script,
 		}
 		return &runtimeJobInfo, nil
 	}
@@ -106,16 +118,20 @@ func (c *Client) GetTasksInInterval(startTime time.Time, endTime time.Time, time
 
 	var tasks []*constants.TaskDB
 	for rows.Next() {
-		var task constants.TaskDB
-		var payload constants.Payload
-		err := rows.Scan(&task.ID, &task.JobName, &task.JobType, &task.CronExpr,
-			&payload.Format, &payload.Script, &task.CallbackURL, &task.Status,
-			&task.ExecutionTime, &task.CreateTime, &task.UpdateTime, &task.Retries)
+		var taskDB constants.TaskDB
+		var format int
+		var script string
+		err := rows.Scan(&taskDB.ID, &taskDB.JobName, &taskDB.JobType, &taskDB.CronExpr,
+			&format, &script, &taskDB.CallbackURL, &taskDB.Status, &taskDB.ExecutionTime,
+			&taskDB.CreateTime, &taskDB.UpdateTime, &taskDB.Retries)
 		if err != nil {
 			return nil, err
 		}
-		task.Payload = &payload
-		tasks = append(tasks, &task)
+		taskDB.Payload = &constants.Payload{
+			Format: format,
+			Script: script,
+		}
+		tasks = append(tasks, &taskDB)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -142,11 +158,34 @@ func (c *Client) UpdateByID(ctx context.Context, table string, id string, args m
 		i++
 	}
 
-	query := `Update ` + table + ` SET ` + strings.Join(setValues, ", ") + ` WHERE id = $` + strconv.Itoa(i)
+	query := `update ` + table + ` SET ` + strings.Join(setValues, ", ") + ` WHERE id = $` + strconv.Itoa(i)
 	values = append(values, id)
 	_, err := c.db.ExecContext(ctx, query, values...)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func (c *Client) InsertUser(ctx context.Context, record databasehandler.DataRecord) error {
+	user, ok := record.(*constants.UserInfo)
+	if !ok {
+		return errors.New("invalid data record")
+	}
+	query := `INSERT INTO users (username, password, role) VALUES ($1, $2, $3)`
+	_, err := c.db.ExecContext(ctx, query, user.Username, user.Password, user.Role)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) IsValidCredential(ctx context.Context, username string, password string) (bool, error) {
+	query := `SELECT * FROM users WHERE username = $1 AND password = $2`
+	var user constants.UserInfo
+	err := c.db.QueryRowContext(ctx, query, username, password).Scan(&user.Username, &user.Password, &user.Role)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }

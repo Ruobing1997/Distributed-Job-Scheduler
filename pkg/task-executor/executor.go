@@ -3,15 +3,17 @@ package task_executor
 import (
 	"context"
 	"fmt"
-	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch"
+	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/middleware"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"log"
+	"os"
 	"os/exec"
 	"time"
 )
 
 func ExecuteTask(task *constants.TaskCache) error {
-	log.Printf("Received task with payload: %s", task.Payload)
+	log.Printf("Received update with payload: format: %d, content: %s",
+		task.Payload.Format, task.Payload.Script)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -28,7 +30,7 @@ func ExecuteTask(task *constants.TaskCache) error {
 		err = executeEmail(task.Payload.Script)
 	}
 	if err != nil {
-		return fmt.Errorf("error executing task: %v", err)
+		return fmt.Errorf("error executing update: %v", err)
 	} else {
 		return nil
 	}
@@ -45,7 +47,7 @@ func MonitorLease(ctx context.Context, taskId string) {
 		case <-ticker.C:
 			err := WorkerRenewLease(taskId, time.Now().Add(constants.LEASE_DURATION))
 			if err != nil {
-				log.Printf("failed to renew lease for task %s: %v", taskId, err)
+				log.Printf("failed to renew lease for update %s: %v", taskId, err)
 			}
 		}
 	}
@@ -53,13 +55,13 @@ func MonitorLease(ctx context.Context, taskId string) {
 }
 
 func WorkerRenewLease(taskID string, newLeaseTime time.Time) error {
-	success, err := dispatch.RenewLease(taskID, newLeaseTime)
+	success, err := middleware.RenewLeaseThroughMediator(taskID, newLeaseTime)
 	if err != nil {
 		return err
 	}
 
 	if !success {
-		return fmt.Errorf("failed to renew lease for task %s", taskID)
+		return fmt.Errorf("failed to renew lease for update %s", taskID)
 	}
 
 	return nil
@@ -70,18 +72,22 @@ func executeScript(scriptContent string, scriptType int) error {
 
 	switch scriptType {
 	case constants.SHELL:
-		cmd = exec.Command("/bin/sh", "-c", scriptContent)
+		shellCommand := "/bin/sh"
+		if os.Getenv("OS") == "Windows_NT" {
+			shellCommand = "cmd.exe"
+		}
+		cmd = exec.Command(shellCommand, "-c", scriptContent)
 	case constants.PYTHON:
-		cmd = exec.Command("python3", "-c", scriptContent)
+		cmd = exec.Command("python", "-c", scriptContent)
 	default:
-		return fmt.Errorf("unsupported script type: %s", scriptType)
+		return fmt.Errorf("unsupported script type: %d", scriptType)
 	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s script execution failed: %v, output: %s", scriptType, err, output)
+		return fmt.Errorf("%d script execution failed: %v, output: %s", scriptType, err, output)
 	}
-	log.Printf("%s script executed successfully: %s", scriptType, output)
+	log.Printf("%d script executed successfully: %s", scriptType, output)
 	return nil
 }
 

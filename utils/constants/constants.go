@@ -57,6 +57,22 @@ type RunTimeTask struct {
 	CronExpr      string
 }
 
+type UserInfo struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Role     int    `json:"role"`
+}
+
+func (t *UserInfo) Validate() error {
+	if t.Username == "" {
+		return errors.New("username cannot be empty")
+	} else if t.Password == "" {
+		return errors.New("password cannot be empty")
+	}
+	return nil
+}
+
 func (t *RunTimeTask) Validate() error {
 	if t.JobType < 0 || t.JobType > 1 {
 		return errors.New("type must be 0 or 1")
@@ -94,6 +110,8 @@ var payloadTypeMap = map[int]string{
 	1: "python",
 	2: "email",
 }
+
+const DOMAIN = "localhost"
 
 const JOBSUCCEED = 2
 const JOBFAILED = 3

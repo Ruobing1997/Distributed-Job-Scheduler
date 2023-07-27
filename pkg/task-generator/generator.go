@@ -1,11 +1,12 @@
 /*
-Package generator is used to generate task for task manager.
-It will handle the error cases and generate a formatted task.
+Package generator is used to generate update for update manager.
+It will handle the error cases and generate a formatted update.
 */
 package generator
 
 import (
 	"encoding/json"
+	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
@@ -24,13 +25,14 @@ func generateTaskDB(id string, jobName string, jobType int, cronExpr string, for
 	script string, retries int) *constants.TaskDB {
 	executionTime := DecryptCronExpress(cronExpr)
 	payload := GeneratePayload(format, script)
+	callbackURL := GenerateCallBackURL(id, constants.DOMAIN)
 	taskDB := constants.TaskDB{
 		ID:            id,
 		JobName:       jobName,
 		JobType:       jobType,
 		CronExpr:      cronExpr,
 		Payload:       payload,
-		CallbackURL:   "", // TODO: add callback url
+		CallbackURL:   callbackURL,
 		Status:        0,
 		ExecutionTime: executionTime,
 		CreateTime:    time.Now(),
@@ -38,6 +40,10 @@ func generateTaskDB(id string, jobName string, jobType int, cronExpr string, for
 		Retries:       retries,
 	}
 	return &taskDB
+}
+
+func GenerateCallBackURL(id string, domain string) string {
+	return fmt.Sprintf("http://%s:8080/tasks/status/%s", domain, id)
 }
 
 func DecryptCronExpress(cronExpr string) time.Time {
@@ -49,7 +55,7 @@ func DecryptCronExpress(cronExpr string) time.Time {
 	return executionTime
 }
 
-// TODO: update content of task cache when determine the structure of task cache
+// TODO: update content of update cache when determine the structure of update cache
 func GenerateTaskCache(id string, jobType int, cronExpr string,
 	executionTime time.Time, retriesLeft int, payload *constants.Payload) *constants.TaskCache {
 	return &constants.TaskCache{

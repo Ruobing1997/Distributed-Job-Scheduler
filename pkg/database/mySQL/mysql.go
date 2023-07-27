@@ -23,7 +23,7 @@ func NewMySQLClient() *Client {
 	return &Client{Db: db}
 }
 
-func (c *Client) InsertTask(ctx context.Context, record databasehandler.DataRecord) error {
+func (c *Client) InsertTask(ctx context.Context, table string, record databasehandler.DataRecord) error {
 	taskDB, ok := record.(*constants.TaskDB)
 	if !ok {
 		return errors.New("invalid data record")

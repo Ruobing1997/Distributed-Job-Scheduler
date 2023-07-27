@@ -40,13 +40,16 @@
             event.preventDefault();
 
             const formData = new FormData(event.target);
+            const jobType = parseInt(formData.get("jobType"), 10);
+            const format = parseInt(formData.get("format"), 10);
+            const retries = parseInt(formData.get("retries"), 10);
             const data = {
                 jobName: formData.get("jobName"),
-                jobType: formData.get("jobType"),
-                cronExpr: formData.get("Cron Expression"),
-                format: formData.get("format"),
+                jobType: jobType,
+                cronExpr: formData.get("cronExpr"),
+                format: format,
                 script: formData.get("script"),
-                retries: formData.get("retries"),
+                retries: retries,
             };
 
             fetch("http://localhost:8080/generate", {
@@ -67,7 +70,7 @@
     </script>
 </head>
 <body>
-    <img src="imgs/morefunIcon.png" alt="morefunIcon">
+    <img src="../imgs/morefunIcon.png" alt="morefunIcon">
     <form onsubmit="submitForm(event)">
         <label for="jobName">JobName:</label>
         <input type="text" id="jobName" name="jobName" required>
@@ -94,10 +97,10 @@
             <legend>Payload</legend>
             <label for="format">format:</label>
             <select id="format" name="format">
-                <option value="Python">Python</option>
-                <option value="Shell">Shell</option>
-                <option value="Email">Email</option>
-                <option value="Other">Other</option>
+                <option value="0">Shell</option>
+                <option value="1">Python</option>
+                <option value="2">Email</option>
+                <option value="3">Other</option>
             </select>
             <br><br>
 

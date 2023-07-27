@@ -20,22 +20,23 @@ func Init() *redis.Client {
 		DB:       REDISPQ_DB,
 	})
 
-	_, err := client.Ping(context.Background()).Result()
+	pong, err := client.Ping(context.Background()).Result()
 	if err != nil {
 		log.Printf("redis connection failed: %v", err)
 	}
+	log.Printf("redis connection succeeded: %s", pong)
 	Qlen = 0
 	return client
 }
 
 func AddJob(e *constants.TaskCache) {
 	if (client.HExists(context.Background(), REDIS_MAP_KEY, e.ID)).Val() {
-		log.Printf("task %s already exists in redis", e.ID)
+		log.Printf("update %s already exists in redis", e.ID)
 		return
 	}
 	data, err := json.Marshal(e)
 	if err != nil {
-		log.Printf("marshal task cache failed: %v", err)
+		log.Printf("marshal update cache failed: %v", err)
 	}
 	var z = redis.Z{
 		Score:  float64(e.ExecutionTime.Unix()),
@@ -61,22 +62,22 @@ func PopNextJob() *constants.TaskCache {
 	if len(result) > 0 {
 		Qlen--
 		if err := json.Unmarshal([]byte(result[0].Member.(string)), &e); err != nil {
-			log.Printf("unmarshal task cache failed: %v", err)
+			log.Printf("unmarshal update cache failed: %v", err)
 		}
 		client.HDel(context.Background(), REDIS_MAP_KEY, e.ID)
 	} else {
-		log.Printf("no task cache in redis")
+		log.Printf("no update cache in redis")
 	}
 	return &e
 }
 
 // RemoveJobByID When the manager knows the job is dispatched and processed successfully by workers, remove it from queue and map
 func RemoveJobByID(id string) {
-	jobData, err := client.HGet(context.Background(), REDIS_MAP_KEY, id).Result()
-	if err != nil {
-		log.Printf("get job data failed: %v", err)
+	jobData := client.HGet(context.Background(), REDIS_MAP_KEY, id)
+	if jobData.Err() != nil {
+		log.Printf("get job data failed: %v", jobData.Err())
 	} else {
-		client.ZRem(context.Background(), REDIS_PQ_KEY, jobData)
+		client.ZRem(context.Background(), REDIS_PQ_KEY, jobData.Val())
 		client.HDel(context.Background(), REDIS_MAP_KEY, id)
 		Qlen--
 	}
@@ -89,7 +90,7 @@ func GetJobByID(id string) *constants.TaskCache {
 	}
 	var e constants.TaskCache
 	if err := json.Unmarshal([]byte(jobData), &e); err != nil {
-		log.Printf("unmarshal task cache failed: %v", err)
+		log.Printf("unmarshal update cache failed: %v", err)
 	}
 	return &e
 }
@@ -113,17 +114,18 @@ func GetNextJob() *constants.TaskCache {
 	var e constants.TaskCache
 	if len(result) > 0 {
 		if err := json.Unmarshal([]byte(result[0]), &e); err != nil {
-			log.Printf("unmarshal task cache failed: %v", err)
+			log.Printf("unmarshal update cache failed: %v", err)
 		}
 	} else {
-		log.Printf("no task cache in redis")
+		log.Printf("no update cache in redis")
 		return nil
 	}
 	return &e
 }
 
 func CheckWithinThreshold(executionTime time.Time) bool {
-	return time.Until(executionTime) <= PROXIMITY_THRESHOLD
+	result := time.Until(executionTime) <= PROXIMITY_THRESHOLD
+	return result
 }
 
 func GetJobsForDispatchWithBuffer() []*constants.TaskCache {
@@ -141,7 +143,7 @@ func GetJobsForDispatchWithBuffer() []*constants.TaskCache {
 	for _, result := range results {
 		var e constants.TaskCache
 		if err := json.Unmarshal([]byte(result.Member.(string)), &e); err != nil {
-			log.Printf("unmarshal task cache failed: %v", err)
+			log.Printf("unmarshal update cache failed: %v", err)
 		}
 		matureTasks = append(matureTasks, &e)
 	}
@@ -163,7 +165,7 @@ func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 	for _, result := range results {
 		var e constants.TaskCache
 		if err := json.Unmarshal([]byte(result.Member.(string)), &e); err != nil {
-			log.Printf("unmarshal task cache failed: %v", err)
+			log.Printf("unmarshal update cache failed: %v", err)
 		}
 		client.ZRem(context.Background(), REDIS_PQ_KEY, result.Member)
 		client.HDel(context.Background(), REDIS_MAP_KEY, e.ID)
@@ -174,7 +176,7 @@ func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 }
 
 func SetLeaseWithID(taskID string, duration time.Duration) error {
-	leaseKey := fmt.Sprintf("lease:task:%s", taskID)
+	leaseKey := fmt.Sprintf("lease:update:%s", taskID)
 	err := client.SetEx(context.Background(), leaseKey, REDIS_LEASE_MAP_VALUE_PROCESSING, duration).Err()
 	if err != nil {
 		return fmt.Errorf("set lease failed: %v", err)

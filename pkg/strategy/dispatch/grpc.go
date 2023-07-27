@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	data_structure_redis "git.woa.com/robingowang/MoreFun_SuperNova/pkg/data-structure"
+	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/middleware"
 	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
 	task_executor "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-executor"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
@@ -31,6 +32,7 @@ func Init() {
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
+	middleware.SetRenewLeaseFunction(RenewLease)
 }
 
 func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.TaskResponse, error) {
@@ -74,7 +76,7 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 
 	if err != nil {
 		// over time, no response
-		return task.ID, constants.JOBFAILED, fmt.Errorf("could not execute task: %v", err)
+		return task.ID, constants.JOBFAILED, fmt.Errorf("could not execute update: %v", err)
 	}
 	log.Printf("Task %s executed with status %d", r.Id, r.Status)
 	return r.Id, int(r.Status), nil
@@ -85,7 +87,7 @@ func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (
 	err := data_structure_redis.SetLeaseWithID(in.Id, 2*time.Second)
 	if err != nil {
 		return &pb.RenewLeaseResponse{Success: false},
-			fmt.Errorf("lease for task %s has expired", in.Id)
+			fmt.Errorf("lease for update %s has expired", in.Id)
 	}
 	return &pb.RenewLeaseResponse{Success: true}, nil
 }
@@ -111,4 +113,14 @@ func RenewLease(taskID string, newLeaseTime time.Time) (bool, error) {
 	}
 
 	return success.Success, nil
+}
+
+func (s *ServerImpl) StopTask(ctx context.Context, in *pb.TaskStopRequest) (*pb.TaskResponse, error) {
+	// Similar with ExecuteTask, but it is to stop a update
+	return nil, nil // TODO
+}
+
+func StopRunningTask(runningTask *constants.RunTimeTask) (string, int, error) {
+	// TODO
+	return "", 0, nil
 }

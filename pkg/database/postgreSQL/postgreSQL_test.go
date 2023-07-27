@@ -3,106 +3,153 @@ package postgreSQL
 import (
 	"context"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
 )
 
-func setUpTestForTaskDB(t *testing.T, client *Client) {
-	_, err := client.db.Exec(`INSERT INTO task_db (id, name, type, schedule, payload, callback_url, status, execution_time, next_execution_time, create_time, update_time, retries, result) VALUES
-		('1', 'Task 1', 1, 'daily', 'payload1', 'https://callback1.com', 1, '2022-01-01 12:00:00', '2022-01-02 12:00:00', '2022-01-01 00:00:00', '2022-01-01 00:00:00', 0, 0),
-		('2', 'Task 2', 2, 'weekly', 'payload2', 'https://callback2.com', 1, '2022-01-01 13:00:00', '2022-01-08 13:00:00', '2022-01-01 00:00:00', '2022-01-01 00:00:00', 0, 0)`)
-	if err != nil {
-		t.Fatalf("Failed to insert test data: %v", err)
-	}
-}
+func TestInsertTask(t *testing.T) {
+	// 创建模拟数据库连接和 mock 对象
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
 
-func setUpTestForExecutionRecord(t *testing.T, client *Client) {
-	_, err := client.db.Exec(`INSERT INTO execution_record (id, job_type, job_status, retries_left) VALUES 
-		('1', 1, 1, 0), ('2', 2, 1, 0)`)
-	if err != nil {
-		t.Fatalf("Failed to insert test data: %v", err)
-	}
-}
+	// 使用模拟数据库创建客户端
+	client := &Client{db: db}
 
-func TestGetTasksInInterval(t *testing.T) {
-	client := NewpostgreSQLClient()
-	setUpTestForTaskDB(t, client)
+	t.Run("insert into job_full_info table", func(t *testing.T) {
+		mock.ExpectExec("INSERT INTO job_full_info").
+			WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// Call the GetTasksInInterval function
-	startTime := time.Date(2022, 1, 1, 12, 0, 0, 0, time.UTC)
-	endTime := time.Date(2022, 1, 1, 14, 0, 0, 0, time.UTC)
-	timeTracker := time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC)
-	tasks, err := GetTasksInInterval(client.db, startTime, endTime, timeTracker)
-
-	if err != nil {
-		t.Fatalf("Failed to get tasks in interval: %v", err)
-	}
-
-	// Check the number of tasks returned
-	expectedTasks := 2
-	if len(tasks) != expectedTasks {
-		t.Errorf("Expected %d tasks, but got %d", expectedTasks, len(tasks))
-	}
-
-	// Check the task details
-	if tasks[0].ID != "1" || tasks[0].Name != "Task 1" || tasks[0].JobType != 1 {
-		t.Errorf("Task 1 details are incorrect")
-	}
-	if tasks[1].ID != "2" || tasks[1].Name != "Task 2" || tasks[1].JobType != 2 {
-		t.Errorf("Task 2 details are incorrect")
-	}
-
-	defer func() {
-		_, err = client.db.Exec("DELETE FROM task_db WHERE id IN ('1', '2')")
-		if err != nil {
-			t.Fatalf("Failed to delete test data: %v", err)
+		taskDB := &constants.TaskDB{
+			ID:            "testID",
+			JobName:       "testJob",
+			JobType:       1,
+			CronExpr:      "*/5 * * * *",
+			Payload:       &constants.Payload{Format: 1, Script: "testScript"},
+			CallbackURL:   "testCallback",
+			Status:        0,
+			ExecutionTime: time.Now(),
+			CreateTime:    time.Now(),
+			UpdateTime:    time.Now(),
+			Retries:       3,
 		}
-	}()
+		err := client.InsertTask(context.Background(), constants.TASKS_FULL_RECORD, taskDB)
+		assert.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("insert into running_tasks_record table", func(t *testing.T) {
+		mock.ExpectExec("INSERT INTO running_tasks_record").
+			WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+
+		runTimeTask := &constants.RunTimeTask{
+			ID:            "testID",
+			ExecutionTime: time.Now(),
+			JobType:       1,
+			JobStatus:     0,
+			Payload:       &constants.Payload{Format: 1, Script: "testScript"},
+			RetriesLeft:   3,
+			CronExpr:      "*/5 * * * *",
+		}
+		err := client.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD, runTimeTask)
+		assert.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("invalid data record for job_full_info table", func(t *testing.T) {
+		err := client.InsertTask(context.Background(), constants.TASKS_FULL_RECORD, &constants.RunTimeTask{})
+		assert.Error(t, err)
+		assert.Equal(t, "invalid data record", err.Error())
+	})
+
+	t.Run("invalid data record for running_tasks_record table", func(t *testing.T) {
+		err := client.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD, &constants.TaskDB{})
+		assert.Error(t, err)
+		assert.Equal(t, "invalid data record", err.Error())
+	})
 }
 
-func TestGetRuntimeJobInfoByID(t *testing.T) {
-	client := NewpostgreSQLClient()
-	setUpTestForExecutionRecord(t, client)
-	runtimeTaskInfo1, err := client.GetRuntimeJobInfoByID("1")
+func TestGetTaskByIDFORJOBFULLINFO(t *testing.T) {
+	// 创建模拟数据库和模拟对象
+	db, mock, err := sqlmock.New()
 	if err != nil {
-		t.Fatalf("Failed to get runtime job info by ID: %v", err)
+		t.Fatalf("failed to open mock database: %v", err)
 	}
-	if runtimeTaskInfo1.ID != "1" || runtimeTaskInfo1.JobType != 1 || runtimeTaskInfo1.JobStatus != 1 || runtimeTaskInfo1.RetriesLeft != 0 {
-		t.Errorf("Runtime job info is incorrect")
-	}
-	runtimeTaskInfo2, err := client.GetRuntimeJobInfoByID("2")
-	if err != nil {
-		t.Fatalf("Failed to get runtime job info by ID: %v", err)
-	}
-	if runtimeTaskInfo2.ID != "2" || runtimeTaskInfo2.JobType != 2 || runtimeTaskInfo2.JobStatus != 1 || runtimeTaskInfo2.RetriesLeft != 0 {
-		t.Errorf("Runtime job info is incorrect")
+	defer db.Close()
+
+	client := &Client{
+		db: db,
 	}
 
-	defer func() {
-		_, err = client.db.Exec("DELETE FROM execution_record WHERE id IN ('1', '2')")
-		if err != nil {
-			t.Fatalf("Failed to delete test data: %v", err)
-		}
-	}()
+	// 模拟数据库查询的返回值
+	executionTime, _ := time.Parse("2006-01-02 15:04:05", "2022-01-01 12:00:00")
+	createTime, _ := time.Parse("2006-01-02 15:04:05", "2022-01-01 11:00:00")
+	updateTime, _ := time.Parse("2006-01-02 15:04:05", "2022-01-01 13:00:00")
+	rows := sqlmock.NewRows([]string{"id", "job_name", "job_type", "cron_expr", "execute_format", "execute_script", "callback_url", "status", "execution_time", "create_time", "update_time", "retries"}).
+		AddRow("1", "testJob", 0, "* * * * *", 0, "print('Hello world')", "http://localhost/callback", 1, executionTime, createTime, updateTime, 3)
+
+	mock.ExpectQuery(`SELECT \* FROM job_full_info WHERE id = \$1`).WithArgs("1").WillReturnRows(rows)
+
+	// 调用 GetTaskByID 函数
+	record, err := client.GetTaskByID(context.Background(), constants.TASKS_FULL_RECORD, "1")
+	if err != nil {
+		t.Fatalf("Expected no error, but got %v", err)
+	}
+
+	taskDB, ok := record.(*constants.TaskDB)
+	if !ok {
+		t.Fatalf("Expected TaskDB type, but got different type")
+	}
+
+	// 使用 testify 断言库检查返回的值
+	assert.Equal(t, "testJob", taskDB.JobName)
+	assert.Equal(t, 0, taskDB.JobType)
+
+	// 确保没有意外的数据库调用
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
 }
 
-func TestGetTaskByID(t *testing.T) {
-	client := NewpostgreSQLClient()
-	setUpTestForTaskDB(t, client)
-	taskInfo1, err := client.GetTaskByID(context.Background(), "1")
+func TestGetTaskByIDFORRUNNINGTASKSRECORD(t *testing.T) {
+	// 创建模拟数据库和模拟对象
+	db, mock, err := sqlmock.New()
 	if err != nil {
-		t.Fatalf("Failed to get task info by ID: %v", err)
+		t.Fatalf("failed to open mock database: %v", err)
+	}
+	defer db.Close()
+
+	client := &Client{
+		db: db,
 	}
 
-	task := taskInfo1.(*constants.TaskDB)
-	if task.ID != "1" || task.Name != "Task 1" {
-		t.Errorf("Task info is incorrect")
+	// 模拟数据库查询的返回值
+	executionTime, _ := time.Parse("2006-01-02 15:04:05", "2022-01-01 12:00:00")
+	rows := sqlmock.NewRows([]string{"id", "execution_time", "job_type", "job_status", "execute_format", "execute_script", "retries_left", "cron_expression"}).
+		AddRow("1", executionTime, 1, 0, 1, "print('Hello world')", 3, "* * * * *")
+
+	mock.ExpectQuery(`SELECT \* FROM running_tasks_record WHERE id = \$1`).WithArgs("1").WillReturnRows(rows)
+
+	// 调用 GetTaskByID 函数
+	record, err := client.GetTaskByID(context.Background(), constants.RUNNING_JOBS_RECORD, "1")
+	if err != nil {
+		t.Fatalf("Expected no error, but got %v", err)
 	}
 
-	defer func() {
-		_, err = client.db.Exec("DELETE FROM task_db WHERE id IN ('1', '2')")
-		if err != nil {
-			t.Fatalf("Failed to delete test data: %v", err)
-		}
-	}()
+	runTimeTask, ok := record.(*constants.RunTimeTask)
+	if !ok {
+		t.Fatalf("Expected TaskDB type, but got different type")
+	}
+
+	// 使用 testify 断言库检查返回的值
+	assert.Equal(t, "1", runTimeTask.ID)
+	assert.Equal(t, 1, runTimeTask.JobType)
+
+	// 确保没有意外的数据库调用
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
 }

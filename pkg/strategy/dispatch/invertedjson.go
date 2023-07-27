@@ -46,7 +46,7 @@ func SendTasksToWorker(task *constants.TaskCache) (int, error) {
 
 func WorkerProcessTasks(w http.ResponseWriter, r *http.Request) (int, error) {
 
-	// get task from redis and return received response
+	// get update from redis and return received response
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(JobDispatched)
 

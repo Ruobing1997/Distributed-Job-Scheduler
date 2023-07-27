@@ -6,6 +6,7 @@ import "google/protobuf/timestamp.proto";
 
 service TaskService {
   rpc ExecuteTask(TaskRequest) returns (TaskResponse);
+  rpc StopTask(TaskStopRequest) returns (TaskResponse);
 }
 
 service LeaseService {
@@ -15,6 +16,10 @@ service LeaseService {
 message Payload {
   int32 format = 1;
   string script = 2;
+}
+
+message TaskStopRequest {
+  string id = 1;
 }
 
 message TaskRequest {

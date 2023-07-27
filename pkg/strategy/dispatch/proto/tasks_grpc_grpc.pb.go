@@ -23,6 +23,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type TaskServiceClient interface {
 	ExecuteTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskResponse, error)
+	StopTask(ctx context.Context, in *TaskStopRequest, opts ...grpc.CallOption) (*TaskResponse, error)
 }
 
 type taskServiceClient struct {
@@ -42,11 +43,21 @@ func (c *taskServiceClient) ExecuteTask(ctx context.Context, in *TaskRequest, op
 	return out, nil
 }
 
+func (c *taskServiceClient) StopTask(ctx context.Context, in *TaskStopRequest, opts ...grpc.CallOption) (*TaskResponse, error) {
+	out := new(TaskResponse)
+	err := c.cc.Invoke(ctx, "/TaskService/StopTask", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TaskServiceServer is the server API for TaskService service.
 // All implementations must embed UnimplementedTaskServiceServer
 // for forward compatibility
 type TaskServiceServer interface {
 	ExecuteTask(context.Context, *TaskRequest) (*TaskResponse, error)
+	StopTask(context.Context, *TaskStopRequest) (*TaskResponse, error)
 	mustEmbedUnimplementedTaskServiceServer()
 }
 
@@ -56,6 +67,9 @@ type UnimplementedTaskServiceServer struct {
 
 func (UnimplementedTaskServiceServer) ExecuteTask(context.Context, *TaskRequest) (*TaskResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExecuteTask not implemented")
+}
+func (UnimplementedTaskServiceServer) StopTask(context.Context, *TaskStopRequest) (*TaskResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopTask not implemented")
 }
 func (UnimplementedTaskServiceServer) mustEmbedUnimplementedTaskServiceServer() {}
 
@@ -88,6 +102,24 @@ func _TaskService_ExecuteTask_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TaskService_StopTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TaskStopRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).StopTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/TaskService/StopTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).StopTask(ctx, req.(*TaskStopRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TaskService_ServiceDesc is the grpc.ServiceDesc for TaskService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -98,6 +130,10 @@ var TaskService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExecuteTask",
 			Handler:    _TaskService_ExecuteTask_Handler,
+		},
+		{
+			MethodName: "StopTask",
+			Handler:    _TaskService_StopTask_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

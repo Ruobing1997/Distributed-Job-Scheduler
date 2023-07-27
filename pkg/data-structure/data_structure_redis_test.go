@@ -3,6 +3,7 @@ package data_structure_redis
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -145,4 +146,73 @@ func TestPopJobsForDispatchWithBuffer(t *testing.T) {
 		assert.Equal(t, float64(0), existsInZSet)
 		assert.False(t, existsInHash)
 	}
+}
+
+func TestRedisSubscription(t *testing.T) {
+	// 1. 初始化Redis连接
+	client := Init()
+	if client == nil {
+		t.Fatal("Failed to initialize Redis client.")
+	}
+
+	// 定义一个频道名
+	channelName := "testChannel"
+	messageToSend := "testMessage"
+
+	// 2. 使用goroutine订阅频道并监听消息
+	messageReceived := make(chan string)
+	go func() {
+		pubsub := client.Subscribe(context.Background(), channelName)
+		defer pubsub.Close()
+
+		msg, err := pubsub.ReceiveMessage(context.Background())
+		if err != nil {
+			t.Errorf("Error receiving message: %v", err)
+		}
+		messageReceived <- msg.Payload
+	}()
+
+	// 等待一小段时间，确保上面的goroutine已经开始订阅
+	time.Sleep(2 * time.Second)
+
+	// 使用PUBLISH命令发送消息到频道
+	err := client.Publish(context.Background(), channelName, messageToSend).Err()
+	if err != nil {
+		t.Errorf("Error publishing message: %v", err)
+	}
+
+	// 从messageReceived通道中获取消息，如果在10秒内没有消息，就超时
+	select {
+	case msg := <-messageReceived:
+		if msg != messageToSend {
+			t.Errorf("Expected message '%s', but got '%s'", messageToSend, msg)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("Did not receive expected message in time.")
+	}
+}
+
+func TestRemoveJobByID(t *testing.T) {
+	client := Init()
+	defer client.Close()
+	jobID := "12345"
+	payload := &constants.Payload{Format: 0, Script: "some script"}
+	taskCache := &constants.TaskCache{
+		ID:            jobID,
+		ExecutionTime: time.Now(),
+		JobType:       0,
+		Payload:       payload,
+		RetriesLeft:   2,
+		CronExpr:      "*/5 * * * *",
+	}
+	AddJob(taskCache)
+	jobGetData := client.HGet(context.Background(), REDIS_MAP_KEY, jobID)
+	var anotherCache constants.TaskCache
+	_ = json.Unmarshal([]byte(jobGetData.Val()), &anotherCache)
+	assert.Equal(t, anotherCache.ID, taskCache.ID)
+	RemoveJobByID(jobID)
+	RemoveJobByID(jobID)
+
+	fmt.Println(client.HGet(context.Background(), REDIS_MAP_KEY, jobID).Err())
+	assert.Error(t, client.HGet(context.Background(), REDIS_MAP_KEY, jobID).Err())
 }

@@ -9,6 +9,7 @@ import (
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	_ "github.com/lib/pq"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -20,7 +21,7 @@ type Client struct {
 
 // NewMySQLClient initializes the connection to MySQL database.
 func NewpostgreSQLClient() *Client {
-	db, err := sql.Open(DBDRIVER, connStr)
+	db, err := sql.Open(os.Getenv("POSTGRES"), os.Getenv("POSTGRE_URL"))
 	if err != nil {
 		log.Printf("Error opening database: %s", err.Error())
 	}

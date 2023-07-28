@@ -7,6 +7,8 @@ import (
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/redis/go-redis/v9"
 	"log"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -14,19 +16,42 @@ var client *redis.Client
 var Qlen int64
 
 func Init() *redis.Client {
+
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "redis:6379"
+	}
+
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	redisDB := os.Getenv("REDIS_DB")
+	db := 0
+	if redisDB != "" {
+		db, _ = strconv.Atoi(redisDB)
+	}
+
 	client = redis.NewClient(&redis.Options{
-		Addr:     REDISPQ_Addr,
-		Password: REDISPQ_Password,
-		DB:       REDISPQ_DB,
+		Addr:     redisAddr,
+		Password: redisPassword,
+		DB:       db,
 	})
 
-	pong, err := client.Ping(context.Background()).Result()
-	if err != nil {
-		log.Printf("redis connection failed: %v", err)
+	return maximumConnectionRetry()
+}
+
+func maximumConnectionRetry() *redis.Client {
+	for i := 0; i < 5; i++ {
+		pong, err := client.Ping(context.Background()).Result()
+		if err == nil {
+			log.Printf("redis connection succeeded: %s", pong)
+			Qlen = 0
+			return client
+		}
+		log.Printf("redis connection failed: %v, retrying", err)
+		time.Sleep(2 * time.Second)
 	}
-	log.Printf("redis connection succeeded: %s", pong)
-	Qlen = 0
-	return client
+	log.Fatalf("redis connection failed after 5 retries")
+	return nil
 }
 
 func AddJob(e *constants.TaskCache) {

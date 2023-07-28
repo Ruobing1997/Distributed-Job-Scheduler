@@ -12,8 +12,3 @@ const (
 	JobSucceed       = 2
 	WorkerNoResponse = 3
 )
-
-const (
-	WORKER_SERVICE  = "worker-service"
-	MANAGER_SERVICE = "manager-service"
-)

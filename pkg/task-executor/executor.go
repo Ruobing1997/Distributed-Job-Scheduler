@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/middleware"
-	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch"
+	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"os"
 	"os/exec"
@@ -13,9 +15,8 @@ import (
 )
 
 func Init() {
-	go dispatch.InitWorkerGRPC()
-	middleware.SetRenewLeaseFunction(dispatch.RenewLease)
 	log.Printf("Task Executor and its grpc server are initialized")
+	middleware.SetExecuteTaskFunc(ExecuteTask)
 }
 
 func ExecuteTask(task *constants.TaskCache) error {
@@ -61,8 +62,31 @@ func MonitorLease(ctx context.Context, taskId string) {
 
 }
 
+func RenewLease(taskID string, newLeaseTime time.Time) (bool, error) {
+	conn, err := grpc.Dial(MANAGER_SERVICE+":50051", grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("did not connect: %v", err)
+	}
+	defer conn.Close()
+	client := pb.NewLeaseServiceClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), constants.GRPC_TIMEOUT)
+	defer cancel()
+
+	success, err := client.RenewLease(ctx, &pb.RenewLeaseRequest{
+		Id:           taskID,
+		NewLeaseTime: timestamppb.New(newLeaseTime),
+	})
+
+	if err != nil {
+		return false, fmt.Errorf("could not renew lease: %v", err)
+	}
+
+	return success.Success, nil
+}
+
 func WorkerRenewLease(taskID string, newLeaseTime time.Time) error {
-	success, err := middleware.RenewLeaseThroughMediator(taskID, newLeaseTime)
+	success, err := RenewLease(taskID, newLeaseTime)
 	if err != nil {
 		return err
 	}

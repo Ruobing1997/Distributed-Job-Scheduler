@@ -2,18 +2,18 @@ package middleware
 
 import (
 	"fmt"
-	"time"
+	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 )
 
-var renewLeaseFunc func(taskID string, newLeaseTime time.Time) (bool, error)
+var executeTaskFunc func(task *constants.TaskCache) error
 
-func SetRenewLeaseFunction(f func(taskID string, newLeaseTime time.Time) (bool, error)) {
-	renewLeaseFunc = f
+func SetExecuteTaskFunc(f func(task *constants.TaskCache) error) {
+	executeTaskFunc = f
 }
 
-func RenewLeaseThroughMediator(taskID string, newLeaseTime time.Time) (bool, error) {
-	if renewLeaseFunc != nil {
-		return renewLeaseFunc(taskID, newLeaseTime)
+func ExecuteTaskFuncThroughMediator(task *constants.TaskCache) error {
+	if executeTaskFunc != nil {
+		return executeTaskFunc(task)
 	}
-	return false, fmt.Errorf("renew lease function not set")
+	return fmt.Errorf("ExecuteTask function not set")
 }

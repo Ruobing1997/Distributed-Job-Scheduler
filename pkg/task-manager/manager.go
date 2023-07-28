@@ -6,10 +6,13 @@ import (
 	data_structure_redis "git.woa.com/robingowang/MoreFun_SuperNova/pkg/data-structure"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/database/postgreSQL"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch"
+	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/redis/go-redis/v9"
 	"github.com/robfig/cron/v3"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"strings"
 	"sync"
@@ -203,12 +206,43 @@ func executeMatureTasks() {
 		// TODO: need to update the lease time, the current duration is 2 seconds
 		data_structure_redis.SetLeaseWithID(task.ID, 2*time.Second)
 		// TODO: _ is the workerID, currently not used, will used for routing key in future
-		_, status, err := dispatch.HandoutTasksForExecuting(task)
+		_, status, err := HandoutTasksForExecuting(task)
 		if err != nil {
 			log.Printf("dispatch update %s failed: %v", task.ID, err)
 		}
 		updateDatabaseWithDispatchResult(task, status)
 	}
+}
+
+func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
+	conn, err := grpc.Dial(WORKER_SERVICE+":50051", grpc.WithInsecure())
+	if err != nil {
+		return task.ID, constants.JOBFAILED, fmt.Errorf("did not connect: %v", err)
+	}
+	defer conn.Close()
+	client := pb.NewTaskServiceClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), constants.GRPC_TIMEOUT)
+	defer cancel()
+
+	payload := &pb.Payload{
+		Format: int32(task.Payload.Format),
+		Script: task.Payload.Script,
+	}
+
+	r, err := client.ExecuteTask(ctx, &pb.TaskRequest{
+		Id:            task.ID,
+		Payload:       payload,
+		ExecutionTime: timestamppb.New(task.ExecutionTime),
+		MaxRetryCount: int32(task.RetriesLeft),
+	})
+
+	if err != nil {
+		// over time, no response
+		return task.ID, constants.JOBFAILED, fmt.Errorf("could not execute update: %v", err)
+	}
+	log.Printf("Task %s executed with status %d", r.Id, r.Status)
+	return r.Id, int(r.Status), nil
 }
 
 func MonitorHeadNode() {

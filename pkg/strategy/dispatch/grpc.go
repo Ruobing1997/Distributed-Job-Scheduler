@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	data_structure_redis "git.woa.com/robingowang/MoreFun_SuperNova/pkg/data-structure"
-	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/middleware"
 	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
 	task_executor "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-executor"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
@@ -21,18 +20,28 @@ type ServerImpl struct {
 	pb.UnimplementedLeaseServiceServer
 }
 
-func Init() {
+func InitManagerGRPC() {
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 	s := grpc.NewServer()
 	pb.RegisterTaskServiceServer(s, &ServerImpl{})
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
+}
+
+func InitWorkerGRPC() {
+	lis, err := net.Listen("tcp", ":50051")
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	s := grpc.NewServer()
 	pb.RegisterLeaseServiceServer(s, &ServerImpl{})
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
-	middleware.SetRenewLeaseFunction(RenewLease)
 }
 
 func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.TaskResponse, error) {
@@ -52,7 +61,7 @@ func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.T
 }
 
 func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
+	conn, err := grpc.Dial(WORKER_SERVICE+":50051", grpc.WithInsecure())
 	if err != nil {
 		return task.ID, constants.JOBFAILED, fmt.Errorf("did not connect: %v", err)
 	}
@@ -93,7 +102,7 @@ func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (
 }
 
 func RenewLease(taskID string, newLeaseTime time.Time) (bool, error) {
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
+	conn, err := grpc.Dial(MANAGER_SERVICE+":50051", grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}

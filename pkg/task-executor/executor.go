@@ -4,12 +4,19 @@ import (
 	"context"
 	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/middleware"
+	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"log"
 	"os"
 	"os/exec"
 	"time"
 )
+
+func Init() {
+	go dispatch.InitWorkerGRPC()
+	middleware.SetRenewLeaseFunction(dispatch.RenewLease)
+	log.Printf("Task Executor and its grpc server are initialized")
+}
 
 func ExecuteTask(task *constants.TaskCache) error {
 	log.Printf("Received update with payload: format: %d, content: %s",

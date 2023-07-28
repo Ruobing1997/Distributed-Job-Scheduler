@@ -16,7 +16,7 @@ func main() {
 	fmt.Println("MorFun_SuperNova Manager Init")
 	task_manager.Start()
 	fmt.Println("MorFun_SuperNova Manager Start")
-	go dispatch.Init()
+	go dispatch.InitManagerGRPC()
 	fmt.Println("Dispatch Strategy Start")
 	time.Sleep(2 * time.Second)
 	// Add CORS middleware

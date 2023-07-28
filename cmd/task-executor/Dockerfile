@@ -18,9 +18,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o executor cmd/task-executor/main.go
 
 # 使用alpine作为基础镜像
 FROM alpine:latest
+RUN apk add --no-cache bash
 
 # 从builder镜像复制编译好的程序到当前镜像
-COPY --from=builder /go/src/MoreFun_SuperNova/executor /executor
+COPY --from=builder /go/src/MoreFun_SuperNova/executor /app/executor
 
 # 设置启动命令
-CMD ["/executor", "start"]
+CMD ["/app/executor", "start"]

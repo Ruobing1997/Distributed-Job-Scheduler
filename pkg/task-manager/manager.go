@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -215,7 +216,11 @@ func executeMatureTasks() {
 }
 
 func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
-	conn, err := grpc.Dial(WORKER_SERVICE+":50051", grpc.WithInsecure())
+	workerService := os.Getenv("WORKER_SERVICE")
+	if workerService == "" {
+		workerService = WORKER_SERVICE
+	}
+	conn, err := grpc.Dial(workerService+":50051", grpc.WithInsecure())
 	if err != nil {
 		return task.ID, constants.JOBFAILED, fmt.Errorf("did not connect: %v", err)
 	}

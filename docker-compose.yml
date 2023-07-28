@@ -5,14 +5,23 @@ services:
 
   manager:
     image: morefun-supernova-manager:0.1
-    command: ["/usr/wait-for-it.sh", "postgresql:5432", "--", "/usr/wait-for-it.sh", "redis:6379", "--", "/app/manager", "start"]
+    command: ["/usr/wait-for-it.sh", "postgresql:5432", "--", "/usr/wait-for-it.sh", "redis:6379", "--", "/usr/wait-for-it.sh", "worker:50051", "--", "/app/manager", "start"]
     depends_on:
       - redis
       - postgres
+      - worker
     environment:
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: ""
       REDIS_DB: 0
+      WORKER_SERVICE: worker:50051
+
+
+  worker:
+    image: morefun-supernova-worker:0.1
+    command: ["/app/executor", "start"]
+    environment:
+      MANAGER_SERVICE: manager:50051
 
   redis:
     image: redis:latest

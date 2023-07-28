@@ -63,7 +63,11 @@ func MonitorLease(ctx context.Context, taskId string) {
 }
 
 func RenewLease(taskID string, newLeaseTime time.Time) (bool, error) {
-	conn, err := grpc.Dial(MANAGER_SERVICE+":50051", grpc.WithInsecure())
+	managerService := os.Getenv("MANAGER_SERVICE")
+	if managerService == "" {
+		managerService = MANAGER_SERVICE
+	}
+	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}

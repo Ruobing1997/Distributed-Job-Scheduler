@@ -26,6 +26,7 @@ func InitManagerGRPC() {
 	}
 	s := grpc.NewServer()
 	pb.RegisterTaskServiceServer(s, &ServerImpl{})
+	pb.RegisterLeaseServiceServer(s, &ServerImpl{})
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
@@ -37,6 +38,7 @@ func InitWorkerGRPC() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 	s := grpc.NewServer()
+	pb.RegisterTaskServiceServer(s, &ServerImpl{})
 	pb.RegisterLeaseServiceServer(s, &ServerImpl{})
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)

@@ -52,6 +52,7 @@ func DeleteTaskHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "Successfully deleted update"})
+	c.Redirect(http.StatusSeeOther, "/dashboard")
 }
 
 func UpdateTaskHandler(c *gin.Context) {
@@ -142,4 +143,13 @@ func LoginUserHandler(c *gin.Context) {
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid username or password"})
 	}
+}
+
+func DashboardHandler(c *gin.Context) {
+	tasks, err := task_manager.HandleGetAllTasks()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.HTML(http.StatusOK, "dashboard_index.html", tasks)
 }

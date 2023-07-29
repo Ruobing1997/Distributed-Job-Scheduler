@@ -7,7 +7,7 @@ if __name__ == '__main__':
     data = {
         "name": "Test Task",
         "jobType": "OneTime",
-        "schedule": "0 0 * * *",
+        "generate": "0 0 * * *",
         "payload": "Sample payload",
     }
 

@@ -91,7 +91,7 @@ func PopNextJob() *constants.TaskCache {
 		}
 		client.HDel(context.Background(), REDIS_MAP_KEY, e.ID)
 	} else {
-		log.Printf("no update cache in redis")
+		log.Printf("no task cache in redis")
 	}
 	return &e
 }

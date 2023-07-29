@@ -4,7 +4,17 @@ import (
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/api"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"net/http/httputil"
+	"net/url"
 )
+
+func setupReverseProxy(target string) gin.HandlerFunc {
+	targetURL, _ := url.Parse(target)
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	return func(c *gin.Context) {
+		proxy.ServeHTTP(c.Writer, c.Request)
+	}
+}
 
 func main() {
 	r := gin.Default()
@@ -17,18 +27,11 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	r.POST("/generate", func(c *gin.Context) {
-		api.GenerateTaskHandler(c)
-	})
-	r.DELETE("/task.:id", func(c *gin.Context) {
-		api.DeleteTaskHandler(c)
-	})
-	r.GET("/task.:id", func(c *gin.Context) {
-		api.GetTaskHandler(c)
-	})
-	r.PUT("/task.:id", func(c *gin.Context) {
-		api.UpdateTaskHandler(c)
-	})
+	r.Static("/frontend", "./app/frontend")
+	r.Static("/generate", "./app/frontend/generate")
+	r.Static("/imgs", "./app/frontend/imgs")
+
+	r.Any("/api/*any", setupReverseProxy("http://manager:9090"))
 
 	r.POST("/register", func(c *gin.Context) {
 		api.RegisterUserHandler(c)

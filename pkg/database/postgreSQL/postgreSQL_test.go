@@ -70,6 +70,7 @@ func TestInsertTask(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, "invalid data record", err.Error())
 	})
+
 }
 
 func TestGetTaskByIDFORJOBFULLINFO(t *testing.T) {

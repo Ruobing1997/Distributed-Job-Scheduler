@@ -1,8 +1,13 @@
 version: '3'
 
 services:
-
-
+  api-server:
+    image: morefun-supernova-api:0.1
+    command: ["/app/api"]
+    depends_on:
+      - manager
+    ports:
+      - "8080:8080"
   manager:
     image: morefun-supernova-manager:0.1
     command: ["/usr/wait-for-it.sh", "postgresql:5432", "--", "/usr/wait-for-it.sh", "redis:6379", "--", "/usr/wait-for-it.sh", "worker:50051", "--", "/app/manager", "start"]
@@ -11,17 +16,22 @@ services:
       - postgres
       - worker
     environment:
-      REDIS_ADDR: redis:6379
+      REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: ""
       REDIS_DB: 0
-      WORKER_SERVICE: worker:50051
+      WORKER_SERVICE: "worker"
+      MANAGER_SERVICE: "manager"
+      POSTGRES: "postgres"
+      POSTGRES_URL: "host=postgres port=5432 user=postgres password=${POSTGRES_PASSWORD} dbname=postgres sslmode=disable"
+    ports:
+      - "9090:9090"
 
 
   worker:
     image: morefun-supernova-worker:0.1
     command: ["/app/executor", "start"]
     environment:
-      MANAGER_SERVICE: manager:50051
+      MANAGER_SERVICE: "manager"
 
   redis:
     image: redis:latest
@@ -32,11 +42,11 @@ services:
   postgres:
     image: postgres:latest
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: postgres
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "postgres"
     volumes:
-      - ./pkg/database/postgresSQL/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./pkg/database/postgreSQL/init.sql:/docker-entrypoint-initdb.d/init.sql
       - pgdata:/var/lib/postgresql/data
 
 volumes:

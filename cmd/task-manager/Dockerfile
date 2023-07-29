@@ -17,6 +17,7 @@ RUN apk add --no-cache bash
 
 COPY --from=builder /usr/wait-for-it.sh /usr/wait-for-it.sh
 COPY --from=builder /go/src/MoreFun_SuperNova/manager /app/manager
+COPY --from=builder /go/src/MoreFun_SuperNova/frontend /app/frontend
 
 RUN chmod +x /usr/wait-for-it.sh
 

@@ -21,7 +21,7 @@ type Client struct {
 
 // NewMySQLClient initializes the connection to MySQL database.
 func NewpostgreSQLClient() *Client {
-	db, err := sql.Open(os.Getenv("POSTGRES"), os.Getenv("POSTGRE_URL"))
+	db, err := sql.Open(os.Getenv("POSTGRES"), os.Getenv("POSTGRES_URL"))
 	if err != nil {
 		log.Printf("Error opening database: %s", err.Error())
 	}
@@ -141,7 +141,7 @@ func (c *Client) GetTasksInInterval(startTime time.Time, endTime time.Time, time
 }
 
 func (c *Client) DeleteByID(ctx context.Context, table string, id string) error {
-	query := `DELETE ` + table + ` WHERE id = $1`
+	query := `DELETE FROM ` + table + ` WHERE id = $1`
 	_, err := c.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting execution record: %s", err.Error())
@@ -189,4 +189,33 @@ func (c *Client) IsValidCredential(ctx context.Context, username string, passwor
 		return false, err
 	}
 	return true, nil
+}
+
+func (c *Client) GetAllTasks() ([]*constants.TaskDB, error) {
+	query := `SELECT * FROM job_full_info`
+	rows, err := c.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	var tasks []*constants.TaskDB
+	for rows.Next() {
+		var taskDB constants.TaskDB
+		var format int
+		var script string
+		err := rows.Scan(&taskDB.ID, &taskDB.JobName, &taskDB.JobType, &taskDB.CronExpr,
+			&format, &script, &taskDB.CallbackURL, &taskDB.Status, &taskDB.ExecutionTime,
+			&taskDB.CreateTime, &taskDB.UpdateTime, &taskDB.Retries)
+		if err != nil {
+			return nil, err
+		}
+		taskDB.Payload = &constants.Payload{
+			Format: format,
+			Script: script,
+		}
+		tasks = append(tasks, &taskDB)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tasks, nil
 }

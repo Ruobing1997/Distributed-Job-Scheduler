@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/api"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch"
 	task_manager "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-manager"
+	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
 	"log"
 	"os"
@@ -33,7 +35,27 @@ var startCmd = &cobra.Command{
 		go dispatch.InitManagerGRPC()
 		time.Sleep(2 * time.Second)
 		fmt.Println("All set, you are good to go")
-		select {} // start forever
+		r := gin.Default()
+
+		r.LoadHTMLGlob("./app/frontend/*/*.html")
+
+		r.POST("/api/generate", func(c *gin.Context) {
+			api.GenerateTaskHandler(c)
+		})
+		r.DELETE("/api/task/:id/delete", func(c *gin.Context) {
+			api.DeleteTaskHandler(c)
+		})
+		r.GET("/api/task/:id", func(c *gin.Context) {
+			api.GetTaskHandler(c)
+		})
+		r.PUT("/api/task/:id", func(c *gin.Context) {
+			api.UpdateTaskHandler(c)
+		})
+		r.GET("/api/dashboard", func(c *gin.Context) {
+			api.DashboardHandler(c)
+		})
+		r.Run(":9090")
+		log.Printf("MorFun_SuperNova Manager Start on port 9090")
 	},
 }
 

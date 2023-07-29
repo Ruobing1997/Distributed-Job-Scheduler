@@ -107,7 +107,7 @@ func HandleNewTasks(name string, taskType int, cronExpression string,
 		// insert update to priority queue
 		addJobToRedis(taskDB)
 	}
-	return callBackURL, nil
+	return taskDB.ID, nil
 }
 
 func HandleDeleteTasks(taskID string) error {
@@ -173,6 +173,14 @@ func HandleGetTasks(taskID string) (*constants.TaskDB, error) {
 	return record.(*constants.TaskDB), nil
 }
 
+func HandleGetAllTasks() ([]*constants.TaskDB, error) {
+	tasks, err := databaseClient.GetAllTasks()
+	if err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
 func AddTasksFromDBWithTickers() {
 	tasks, _ := databaseClient.GetTasksInInterval(time.Now(), time.Now().Add(DURATION), timeTracker)
 	timeTracker = time.Now()
@@ -203,13 +211,13 @@ func SubscribeToRedisChannel() {
 func executeMatureTasks() {
 	matureTasks := data_structure_redis.PopJobsForDispatchWithBuffer()
 	for _, task := range matureTasks {
-		fmt.Println("dispatching update: ", task.ID)
+		fmt.Println("dispatching task: ", task.ID)
 		// TODO: need to update the lease time, the current duration is 2 seconds
 		data_structure_redis.SetLeaseWithID(task.ID, 2*time.Second)
 		// TODO: _ is the workerID, currently not used, will used for routing key in future
 		_, status, err := HandoutTasksForExecuting(task)
 		if err != nil {
-			log.Printf("dispatch update %s failed: %v", task.ID, err)
+			log.Printf("dispatch %s failed: %v", task.ID, err)
 		}
 		updateDatabaseWithDispatchResult(task, status)
 	}
@@ -244,7 +252,7 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 
 	if err != nil {
 		// over time, no response
-		return task.ID, constants.JOBFAILED, fmt.Errorf("could not execute update: %v", err)
+		return task.ID, constants.JOBFAILED, fmt.Errorf("could not execute: %v", err)
 	}
 	log.Printf("Task %s executed with status %d", r.Id, r.Status)
 	return r.Id, int(r.Status), nil
@@ -257,7 +265,7 @@ func MonitorHeadNode() {
 	for {
 		select {
 		case <-headNodeTicker.C:
-			log.Println("Head node timer is triggered")
+			//log.Println("Head node timer is triggered")
 			taskCache := data_structure_redis.GetNextJob()
 			if taskCache != nil && data_structure_redis.CheckWithinThreshold(taskCache.ExecutionTime) {
 				executeMatureTasks()

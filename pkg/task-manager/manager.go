@@ -21,10 +21,12 @@ import (
 )
 
 var (
-	timeTracker        time.Time
-	databaseClient     *postgreSQL.Client
-	redisClient        *redis.Client
-	testMessageChannel = make(chan string)
+	timeTracker          time.Time
+	databaseClient       *postgreSQL.Client
+	redisClient          *redis.Client
+	testMessageChannel   = make(chan string)
+	isTaskBeingProcessed bool
+	taskProcessingLock   sync.Mutex
 )
 
 func Init() {
@@ -198,12 +200,16 @@ func SubscribeToRedisChannel() {
 	ch := pubsub.Channel()
 	for msg := range ch {
 		if msg.Payload == data_structure_redis.TASK_AVAILABLE {
-			fmt.Println("redis channel received: ", msg.Payload)
-			// check redis priority queue and dispatch tasks
-			executeMatureTasks()
+			taskProcessingLock.Lock()
+			if !isTaskBeingProcessed {
+				isTaskBeingProcessed = true
+				fmt.Println("redis channel received: ", msg.Payload)
+				// check redis priority queue and dispatch tasks
+				executeMatureTasks()
+				isTaskBeingProcessed = false
+			}
+			taskProcessingLock.Unlock()
 
-			// TODO: Remove the following test channel msg:
-			testMessageChannel <- msg.Payload
 		}
 	}
 }
@@ -265,11 +271,17 @@ func MonitorHeadNode() {
 	for {
 		select {
 		case <-headNodeTicker.C:
-			//log.Println("Head node timer is triggered")
-			taskCache := data_structure_redis.GetNextJob()
-			if taskCache != nil && data_structure_redis.CheckWithinThreshold(taskCache.ExecutionTime) {
-				executeMatureTasks()
+			taskProcessingLock.Lock()
+			if !isTaskBeingProcessed {
+				isTaskBeingProcessed = true
+				//log.Println("Head node timer is triggered")
+				taskCache := data_structure_redis.GetNextJob()
+				if taskCache != nil && data_structure_redis.CheckWithinThreshold(taskCache.ExecutionTime) {
+					executeMatureTasks()
+				}
+				isTaskBeingProcessed = false
 			}
+			taskProcessingLock.Unlock()
 		}
 	}
 }

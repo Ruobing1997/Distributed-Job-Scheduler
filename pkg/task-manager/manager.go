@@ -301,12 +301,14 @@ func updateDatabaseWithDispatchResult(task *constants.TaskCache, jobStatusCode i
 			// it is recur job, update execution time, update time, status, (previous execution time) may not need, since we have update time
 			cronExpr := task.CronExpr
 			newExecutionTime := generator.DecryptCronExpress(cronExpr)
+			log.Printf("old time: %v, new time: %v", task.ExecutionTime, newExecutionTime)
 			updateVars := map[string]interface{}{
 				"execution_time": newExecutionTime,
 				"update_time":    time.Now(),
 				"status":         constants.JOBREENTERED,
 			}
 			databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID, updateVars)
+			task.ExecutionTime = newExecutionTime
 			if data_structure_redis.CheckTasksInDuration(newExecutionTime, DURATION) {
 				data_structure_redis.AddJob(task)
 			}

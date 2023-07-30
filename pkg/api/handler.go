@@ -4,7 +4,9 @@ import (
 	task_manager "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-manager"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/gin-gonic/gin"
+	"log"
 	"net/http"
+	"time"
 )
 
 type TaskRequest struct {
@@ -51,8 +53,7 @@ func DeleteTaskHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "Successfully deleted update"})
-	c.Redirect(http.StatusSeeOther, "/dashboard")
+	c.Redirect(http.StatusSeeOther, "/api/dashboard")
 }
 
 func UpdateTaskHandler(c *gin.Context) {
@@ -70,17 +71,22 @@ func UpdateTaskHandler(c *gin.Context) {
 	script := taskRequest.Script
 	retries := taskRequest.Retries
 
+	log.Printf("jobName: %s, jobType: %d, cronExpr: %s, format: %d, script: %s, retries: %d",
+		jobName, jobType, cronExpr, format, script, retries)
+
 	updateVarsMap := map[string]interface{}{
-		"jobName":  jobName,
-		"jobType":  jobType,
-		"cronExpr": cronExpr,
-		"format":   format,
-		"script":   script,
-		"retries":  retries}
+		"job_name":       jobName,
+		"job_type":       jobType,
+		"cron_expr":      cronExpr,
+		"execute_format": format,
+		"execute_script": script,
+		"update_time":    time.Now(),
+		"retries":        retries}
 	err := task_manager.HandleUpdateTasks(
 		taskID, updateVarsMap)
 
 	if err != nil {
+		log.Printf("Error updating task: %s", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -94,7 +100,7 @@ func GetTaskHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, task)
+	c.HTML(http.StatusOK, "detail_index.html", task)
 }
 
 func RegisterUserHandler(c *gin.Context) {

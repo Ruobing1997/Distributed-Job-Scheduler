@@ -61,9 +61,11 @@
             })
             .then((response) => response.json())
             .then((result) => {
+                alert("Form submitted successfully!")
                 console.log("Form submitted successfully:", result);
             })
             .catch((error) => {
+                alert("Error submitting form. Please try again.")
                 console.error("Error submitting form:", error);
             });
         }

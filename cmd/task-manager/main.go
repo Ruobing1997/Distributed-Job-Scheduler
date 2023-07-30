@@ -48,7 +48,7 @@ var startCmd = &cobra.Command{
 		r.GET("/api/task/:id", func(c *gin.Context) {
 			api.GetTaskHandler(c)
 		})
-		r.PUT("/api/task/:id", func(c *gin.Context) {
+		r.PUT("/api/task/:id/update", func(c *gin.Context) {
 			api.UpdateTaskHandler(c)
 		})
 		r.GET("/api/dashboard", func(c *gin.Context) {

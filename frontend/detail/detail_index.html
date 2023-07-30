@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Current Task Info</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f5f7;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 20px;
+            width: 80%;
+            max-width: 800px;
+        }
+        h1 {
+            color: #007bff;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        label {
+            color: #555;
+            display: block;
+        }
+        input[type="text"], select, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .btn-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+        .left, .right {
+            width: 45%;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .job-type-option {
+            display: inline-block;
+            margin-right: 10px;
+        }
+    </style>
+    <script>
+        window.onload = function () {
+            const formatMap = {
+                0 : "Shell",
+                1 : "Python"
+            }
+
+            const formatElem = document.getElementById("format");
+            formatElem.value = formatMap[formatElem.value];
+        }
+    </script>
+</head>
+<body>
+<div class="container">
+    <h1>Current Task Information</h1>
+    <label for="jobName">Job Name:</label>
+    <input type="text" id="jobName" value="{{.JobName}}" readonly>
+
+    <label for="jobType">Job Type:</label>
+    <input type="text" id="jobType" value="{{.JobType}}" readonly>
+
+    <label for="cronExpr">Cron Expression:</label>
+    <input type="text" id="cronExpr" value="{{.CronExpr}}" readonly>
+
+    <label for="format">Format:</label>
+    <input type="text" id="format" value="{{.Payload.Format}}" readonly>
+
+    <label for="script">Script:</label>
+    <textarea id="script" rows="4" readonly>{{.Payload.Script}}</textarea>
+
+    <label for="retries">Retries:</label>
+    <input type="text" id="retries" value="{{.Retries}}" readonly>
+
+    <div class="btn-container">
+        <button onclick="window.location.href='../../update/update_index.html?taskId={{.ID}}'">Update This Task</button>
+    </div>
+</div>
+</body>
+</html>

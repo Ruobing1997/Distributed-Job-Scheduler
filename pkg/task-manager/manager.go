@@ -140,27 +140,28 @@ func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 	// do nothing when the update is running, report the user cannot update the update when it is running
 	// if the update is in redis priority queue, update it and update it in database
 	data_structure_redis.RemoveJobByID(taskID)
-	var taskCache *constants.TaskCache
+	taskCache := new(constants.TaskCache)
 	taskCache.ID = taskID
+	taskCache.Payload = &constants.Payload{}
 	for key, value := range args {
 		switch key {
-		case "ExecutionTime":
-			taskCache.ExecutionTime = value.(time.Time)
-		case "JobType":
+		case "job_type":
 			taskCache.JobType = value.(int)
 		case "execute_format":
 			taskCache.Payload.Format = value.(int)
 		case "execute_script":
 			taskCache.Payload.Script = value.(string)
-		case "RetriesLeft":
+		case "retries":
 			taskCache.RetriesLeft = value.(int)
-		case "CronExpr":
+		case "cron_expr":
 			taskCache.CronExpr = value.(string)
+			taskCache.ExecutionTime = generator.DecryptCronExpress(value.(string))
 		}
 	}
-	data_structure_redis.AddJob(taskCache)
 	// if the update is in database, update it in database
 	err := databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, taskID, args)
+	// database updated successfully then add job
+	data_structure_redis.AddJob(taskCache)
 	if err != nil {
 		return fmt.Errorf("update update %s failed: %v", taskID, err)
 	}

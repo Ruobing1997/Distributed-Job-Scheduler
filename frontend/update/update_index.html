@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Task Management</title>
+    <title>Update Task Info</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -21,7 +21,7 @@
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
             padding: 20px;
             width: 80%;
-            max-width: 500px;
+            max-width: 800px;
         }
         h1 {
             color: #007bff;
@@ -30,6 +30,7 @@
         }
         label {
             color: #555;
+            display: block;
         }
         input[type="text"], select, textarea {
             width: 100%;
@@ -41,7 +42,8 @@
         }
         .btn-container {
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
+            margin-top: 20px;
         }
         button {
             background-color: #007bff;
@@ -55,32 +57,88 @@
         button:hover {
             background-color: #0056b3;
         }
+        .row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+        .left, .right {
+            width: 45%;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .job-type-option {
+            display: inline-block;
+            margin-right: 10px;
+        }
     </style>
+    <script>
+        function getID() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('taskId');
+        }
+        function updateTask() {
+            const jobId = getID();
+            fetch(`/api/task/${jobId}/update`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    jobName: document.getElementById("newJobName").value,
+                    jobType: parseInt(document.querySelector('input[name="newJobType"]:checked').value, 10),
+                    cronExpr: document.getElementById("newCronExpr").value,
+                    format: parseInt(document.getElementById("newFormat").value, 10),
+                    script: document.getElementById("newScript").value,
+                    retries: parseInt(document.getElementById("newRetries").value, 10)
+                })
+            }).then(response => {
+                if (response.ok) {
+                    alert("Task updated successfully!");
+                } else {
+                    alert("Error updating task. Please try again.");
+                }
+            });
+        }
+    </script>
 </head>
 <body>
-<div class="container">
-    <h1>Update Your Task</h1>
-    <label for="jobName">Job Name:</label>
-    <input type="text" id="jobName" value="{{.JobName}}" readonly>
+    <div class="container">
+        <h1>Update Your Task</h1>
 
-    <label for="jobType">Job Type:</label>
-    <input type="text" id="jobType" value="{{.JobType}}" readonly>
+        <label for="newJobName">New Job Name:</label>
+        <input type="text" id="newJobName">
 
-    <label for="cronExpr">Cron Expression:</label>
-    <input type="text" id="cronExpr" value="{{.CronExpr}}" readonly>
+        <label>New Job Type:</label>
+        <div class="job-type-container">
+            <div class="job-type-option">
+                <input type="radio" id="onetime" name="newJobType" value="0" required>
+                <label for="onetime">One Time</label>
+            </div>
+            <div class="job-type-option">
+                <input type="radio" id="recur" name="newJobType" value="1">
+                <label for="recur">Recur</label>
+            </div>
+        </div>
 
-    <label for="format">Format:</label>
-    <input type="text" id="format" value="{{.Payload.Format}}" readonly>
+        <label for="newCronExpr">New Cron Expression:</label>
+        <input type="text" id="newCronExpr">
 
-    <label for="script">Script:</label>
-    <textarea id="script" rows="4" readonly>{{.Payload.Script}}</textarea>
+        <label for="newFormat">New Format:</label>
+        <select id="newFormat" name="newFormat">
+            <option value="0">Shell</option>
+            <option value="1">Python</option>
+        </select>
 
-    <label for="retries">Retries:</label>
-    <input type="text" id="retries" value="{{.Retries}}" readonly>
+        <label for="newScript">New Script:</label>
+        <textarea id="newScript" rows="4"></textarea>
 
-    <div class="btn-container">
-        <button id="update-btn">Update</button>
+        <label for="newRetries">New Retries:</label>
+        <input type="number" id="newRetries" name="retries" min="0" max="10">
+        <div class="btn-container">
+            <button id="update-btn" onclick="updateTask()">Update</button>
+        </div>
     </div>
-</div>
 </body>
 </html>

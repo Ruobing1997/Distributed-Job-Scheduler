@@ -29,6 +29,7 @@ func main() {
 
 	r.Static("/frontend", "./app/frontend")
 	r.Static("/generate", "./app/frontend/generate")
+	r.Static("/update", "./app/frontend/update")
 	r.Static("/imgs", "./app/frontend/imgs")
 
 	r.Any("/api/*any", setupReverseProxy("http://manager:9090"))

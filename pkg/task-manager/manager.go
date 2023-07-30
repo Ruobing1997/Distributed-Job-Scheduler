@@ -309,6 +309,7 @@ func updateDatabaseWithDispatchResult(task *constants.TaskCache, jobStatusCode i
 			}
 			databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID, updateVars)
 			task.ExecutionTime = newExecutionTime
+			data_structure_redis.RemoveLeaseWithID(task.ID)
 			if data_structure_redis.CheckTasksInDuration(newExecutionTime, DURATION) {
 				data_structure_redis.AddJob(task)
 			}
@@ -319,6 +320,7 @@ func updateDatabaseWithDispatchResult(task *constants.TaskCache, jobStatusCode i
 				"status":      constants.JOBSUCCEED,
 			}
 			databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID, updateVars)
+			data_structure_redis.RemoveLeaseWithID(task.ID)
 		}
 	case dispatch.JobFailed:
 		// update update status to 3
@@ -329,10 +331,12 @@ func updateDatabaseWithDispatchResult(task *constants.TaskCache, jobStatusCode i
 			databaseClient.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID)
 			databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID,
 				map[string]interface{}{"job_status": jobStatusCode})
+			data_structure_redis.RemoveLeaseWithID(task.ID)
 		} else {
 			// update not completely failed, update the retries left, time
 			// and add to redis priority queue
 			RescheduleFailedJobs(task)
+			data_structure_redis.RemoveLeaseWithID(task.ID)
 		}
 	}
 

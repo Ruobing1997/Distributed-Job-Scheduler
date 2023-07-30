@@ -208,3 +208,12 @@ func SetLeaseWithID(taskID string, duration time.Duration) error {
 	}
 	return nil
 }
+
+func RemoveLeaseWithID(taskID string) error {
+	leaseKey := fmt.Sprintf("lease:update:%s", taskID)
+	err := client.Del(context.Background(), leaseKey).Err()
+	if err != nil {
+		return fmt.Errorf("remove lease failed: %v", err)
+	}
+	return nil
+}

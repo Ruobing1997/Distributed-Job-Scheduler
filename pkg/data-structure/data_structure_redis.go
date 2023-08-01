@@ -218,3 +218,27 @@ func RemoveLeaseWithID(taskID string) error {
 	}
 	return nil
 }
+
+func AddStreamIDWorkerIDMapping(ctx context.Context, streamID string, workerID string) error {
+	err := client.Set(ctx, streamID, workerID, 0).Err()
+	if err != nil {
+		return fmt.Errorf("add streamID workerID mapping failed: %v", err)
+	}
+	return nil
+}
+
+func RemoveStreamIDWorkerIDMapping(ctx context.Context, streamID string) error {
+	err := client.Del(ctx, streamID).Err()
+	if err != nil {
+		return fmt.Errorf("remove streamID workerID mapping failed: %v", err)
+	}
+	return nil
+}
+
+func GetWorkerIDFromStreamID(ctx context.Context, streamID string) (string, error) {
+	workerID, err := client.Get(ctx, streamID).Result()
+	if err != nil {
+		return "", fmt.Errorf("get workerID from streamID failed: %v", err)
+	}
+	return workerID, nil
+}

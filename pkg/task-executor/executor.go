@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/database/postgreSQL"
-	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/middleware"
 	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
@@ -22,9 +21,10 @@ var (
 	databaseClient *postgreSQL.Client
 )
 
-type Result struct {
-	ID    string
-	Error error
+type ExecuteResult struct {
+	WorkerID string
+	TaskID   string
+	Status   int32
 }
 
 func Init() {
@@ -37,54 +37,139 @@ func Init() {
 	multiWrite := io.MultiWriter(os.Stdout, logFile)
 	log.SetOutput(multiWrite)
 
+	if err != nil {
+		log.Fatalf("error initializing worker bidirect grpc: %v", err)
+	}
+
 	log.Printf("Task Executor and its grpc server are initialized")
-	middleware.SetExecuteTaskFunc(ExecuteTask)
-	log.Printf("ExecuteTask function set up done")
+
 	databaseClient = postgreSQL.NewpostgreSQLClient()
 	log.Printf("database set up done")
 }
 
-func ExecuteTask(task *constants.TaskCache) (<-chan Result, error) {
-	resultChan := make(chan Result)
+func InitWorkerBidirectGRPC() (pb.TaskManagerService_TaskStreamClient, error) {
+	// MANAGER_SERVICE_IP in format of "manager-service.default.svc.cluster.local:50051"
+	managerService := os.Getenv("MANAGER_SERVICE_IP")
+	if managerService == "" {
+		return nil, fmt.Errorf("MANAGER_SERVICE_IP is not set")
+	}
+	conn, err := grpc.Dial(managerService, grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		return nil, fmt.Errorf("did not connect: %v", err)
+	}
 
-	go func(t *constants.TaskCache) {
-		log.Printf("-------------------------------------------------------")
-		log.Printf("Received update with payload: format: %d, content: %s",
-			t.Payload.Format, t.Payload.Script)
-		runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(t,
-			constants.JOBRUNNING, workerID)
-		var err error
-		err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
-			runningTaskInfo)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	client := pb.NewTaskManagerServiceClient(conn)
 
-		go MonitorLease(ctx, t.ID)
+	stream, err := client.TaskStream(context.Background())
 
-		switch t.Payload.Format {
-		case constants.SHELL:
-			err = executeScript(t.Payload.Script, constants.SHELL)
-		case constants.PYTHON:
-			err = executeScript(t.Payload.Script, constants.PYTHON)
-		case constants.EMAIL:
-			err = executeEmail(t.Payload.Script)
-		}
-		if err != nil {
-			resultChan <- Result{
-				ID:    workerID,
-				Error: fmt.Errorf("error executing task: %s with %v", t.ID, err),
-			}
-		} else {
-			resultChan <- Result{
-				ID: workerID,
-			}
-		}
-	}(task)
+	if err != nil {
+		return nil, fmt.Errorf("could not get stream: %v", err)
+	}
 
-	return resultChan, nil
+	initialMsg := &pb.TaskStreamRequest{
+		Request: &pb.TaskStreamRequest_WorkerIdentity{
+			WorkerIdentity: &pb.WorkerIdentity{
+				WorkerId: workerID,
+			},
+		},
+	}
+
+	if err := stream.Send(initialMsg); err != nil {
+		return nil, fmt.Errorf("failed to send a note: %v", err)
+	}
+
+	return stream, nil
 }
 
-func MonitorLease(ctx context.Context, taskId string) {
+func HandleManagerMessages(stream pb.TaskManagerService_TaskStreamClient) {
+	log.Printf("-------------------------------------------------------")
+	log.Printf("Start handling messages from manager")
+
+	resultChan := make(chan ExecuteResult)
+	go func() {
+		for result := range resultChan {
+			response := &pb.TaskStreamRequest{
+				Request: &pb.TaskStreamRequest_TaskResponse{
+					TaskResponse: &pb.TaskResponse{
+						WorkerID: result.WorkerID,
+						TaskID:   result.TaskID,
+						Status:   result.Status,
+					},
+				},
+			}
+
+			if err := stream.Send(response); err != nil {
+				log.Printf("Error sending response to manager: %v", err)
+			}
+		}
+
+	}()
+
+	for {
+		in, err := stream.Recv()
+		if err == io.EOF {
+			log.Printf("Received EOF from manager")
+			return
+		}
+		if err != nil {
+			log.Printf("Error receiving task from manager: %v", err)
+			continue
+		}
+
+		switch x := in.Response.(type) {
+		case *pb.TaskStreamResponse_TaskRequest:
+			task := x.TaskRequest
+			payload := generator.GeneratePayload(int(task.Payload.Format), task.Payload.Script)
+			taskCache := &constants.TaskCache{
+				ID:            task.Id,
+				Payload:       payload,
+				ExecutionTime: task.ExecutionTime.AsTime(),
+				RetriesLeft:   int(task.MaxRetryCount),
+			}
+			go ExecuteTask(taskCache, resultChan, stream)
+		}
+	}
+}
+
+func ExecuteTask(task *constants.TaskCache,
+	resultChan chan<- ExecuteResult, stream pb.TaskManagerService_TaskStreamClient) {
+	log.Printf("-------------------------------------------------------")
+	log.Printf("Received update with payload: format: %d, content: %s",
+		task.Payload.Format, task.Payload.Script)
+	runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
+		constants.JOBRUNNING, workerID)
+	var err error
+	err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
+		runningTaskInfo)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go MonitorLease(ctx, task.ID, stream)
+
+	switch task.Payload.Format {
+	case constants.SHELL:
+		err = executeScript(task.Payload.Script, constants.SHELL)
+	case constants.PYTHON:
+		err = executeScript(task.Payload.Script, constants.PYTHON)
+	case constants.EMAIL:
+		err = executeEmail(task.Payload.Script)
+	}
+
+	var status int32
+	if err != nil {
+		status = constants.JOBFAILED
+	} else {
+		status = constants.JOBSUCCEED
+	}
+
+	resultChan <- ExecuteResult{
+		WorkerID: workerID,
+		TaskID:   task.ID,
+		Status:   status,
+	}
+}
+
+func MonitorLease(ctx context.Context, taskId string, stream pb.TaskManagerService_TaskStreamClient) {
 	log.Printf("-------------------------------------------------------")
 	log.Printf("Worker: %s is monitoring lease for update: %s", workerID, taskId)
 	ticker := time.NewTicker(constants.LEASE_RENEW_INTERVAL)
@@ -96,53 +181,20 @@ func MonitorLease(ctx context.Context, taskId string) {
 			return
 		case <-ticker.C:
 			log.Printf("Worker: %s is renewing lease for update: %s", workerID, taskId)
-			err := WorkerRenewLease(taskId, constants.LEASE_DURATION)
-			if err != nil {
-				log.Printf("failed to renew lease for update %s: %v", taskId, err)
+			renewRequest := &pb.TaskStreamRequest{
+				Request: &pb.TaskStreamRequest_RenewLease{
+					RenewLease: &pb.RenewLeaseRequest{
+						Id:            taskId,
+						LeaseDuration: durationpb.New(constants.LEASE_DURATION),
+					},
+				},
+			}
+			if err := stream.Send(renewRequest); err != nil {
+				log.Printf("Error sending renew lease request to manager: %v", err)
 			}
 		}
 	}
 
-}
-
-func RenewLease(taskID string, duration time.Duration) (bool, error) {
-	managerService := os.Getenv("MANAGER_SERVICE")
-	if managerService == "" {
-		managerService = MANAGER_SERVICE
-	}
-	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
-	client := pb.NewLeaseServiceClient(conn)
-
-	ctx, cancel := context.WithTimeout(context.Background(), constants.RENEW_LEASE_GRPC_TIMEOUT)
-	defer cancel()
-
-	success, err := client.RenewLease(ctx, &pb.RenewLeaseRequest{
-		Id:            taskID,
-		LeaseDuration: durationpb.New(duration),
-	})
-
-	if err != nil {
-		return false, fmt.Errorf("could not renew lease: %v", err)
-	}
-
-	return success.Success, nil
-}
-
-func WorkerRenewLease(taskID string, duration time.Duration) error {
-	success, err := RenewLease(taskID, duration)
-	if err != nil {
-		return err
-	}
-
-	if !success {
-		return fmt.Errorf("failed to renew lease for update %s", taskID)
-	}
-
-	return nil
 }
 
 func executeScript(scriptContent string, scriptType int) error {

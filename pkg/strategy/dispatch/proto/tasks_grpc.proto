@@ -5,13 +5,26 @@ option go_package = "./task_grpc";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
-service TaskService {
-  rpc ExecuteTask(TaskRequest) returns (TaskResponse);
-  rpc StopTask(TaskStopRequest) returns (TaskResponse);
+service TaskManagerService {
+  rpc TaskStream(stream TaskStreamRequest) returns (stream TaskStreamResponse);
 }
 
-service LeaseService {
-  rpc RenewLease(RenewLeaseRequest) returns (RenewLeaseResponse);
+// Worker -> Manager 的消息
+message TaskStreamRequest {
+  oneof request {
+    WorkerIdentity worker_identity = 1; // Worker 发送身份信息
+    RenewLeaseRequest renew_lease = 2;  // Worker 发送续约请求
+    TaskResponse task_response = 3;     // Worker 发送任务执行结果
+  }
+}
+
+// Manager -> Worker 的消息
+message TaskStreamResponse {
+  oneof response {
+    TaskRequest task_request = 1;          // Manager 派发的任务
+    RenewLeaseResponse renew_lease_response = 2; // Manager 回应续约请求的结果
+    string error_msg = 3;                  // 错误消息
+  }
 }
 
 message Payload {
@@ -31,8 +44,9 @@ message TaskRequest {
 }
 
 message TaskResponse {
-  string id = 1;
-  int32 status = 2;
+  string workerID = 1;
+  string taskID = 2;
+  int32 status = 3;
 }
 
 message RenewLeaseRequest {
@@ -42,4 +56,8 @@ message RenewLeaseRequest {
 
 message RenewLeaseResponse {
   bool success = 1;
+}
+
+message WorkerIdentity {
+  string worker_id = 1;
 }

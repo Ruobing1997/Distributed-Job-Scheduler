@@ -28,6 +28,8 @@ var (
 	isTaskBeingProcessed bool
 	taskProcessingLock   sync.Mutex
 	managerID            = os.Getenv("HOSTNAME")
+	clientStreamMap      sync.Map
+	globalStream         pb.TaskManagerService_TaskStreamClient
 )
 
 func Init() {
@@ -42,6 +44,29 @@ func Init() {
 	// TODO: make the user to choose database type
 	databaseClient = postgreSQL.NewpostgreSQLClient()
 	redisClient = data_structure_redis.Init()
+}
+
+func InitManagerBidirectGRPC() error {
+	// WORKER_SERVICE_IP in format of "worker-service.default.svc.cluster.local:50051"
+	workerService := os.Getenv("WORKER_SERVICE_IP")
+	if workerService == "" {
+		return fmt.Errorf("WORKER_SERVICE_IP is not set")
+	}
+	conn, err := grpc.Dial(workerService,
+		grpc.WithInsecure(),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
+	if err != nil {
+		return fmt.Errorf("did not connect: %v", err)
+	}
+
+	client := pb.NewTaskManagerServiceClient(conn)
+	globalStream, err = client.TaskStream(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to create stream: %v", err)
+	}
+
+	clientStreamMap.Store(workerService, globalStream)
+	return nil
 }
 
 func Start() {

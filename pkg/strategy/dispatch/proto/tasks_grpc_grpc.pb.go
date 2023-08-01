@@ -18,210 +18,120 @@ import (
 // Requires gRPC-Go v1.32.0 or later.
 const _ = grpc.SupportPackageIsVersion7
 
-// TaskServiceClient is the client API for TaskService service.
+// TaskManagerServiceClient is the client API for TaskManagerService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type TaskServiceClient interface {
-	ExecuteTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskResponse, error)
-	StopTask(ctx context.Context, in *TaskStopRequest, opts ...grpc.CallOption) (*TaskResponse, error)
+type TaskManagerServiceClient interface {
+	TaskStream(ctx context.Context, opts ...grpc.CallOption) (TaskManagerService_TaskStreamClient, error)
 }
 
-type taskServiceClient struct {
+type taskManagerServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewTaskServiceClient(cc grpc.ClientConnInterface) TaskServiceClient {
-	return &taskServiceClient{cc}
+func NewTaskManagerServiceClient(cc grpc.ClientConnInterface) TaskManagerServiceClient {
+	return &taskManagerServiceClient{cc}
 }
 
-func (c *taskServiceClient) ExecuteTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskResponse, error) {
-	out := new(TaskResponse)
-	err := c.cc.Invoke(ctx, "/TaskService/ExecuteTask", in, out, opts...)
+func (c *taskManagerServiceClient) TaskStream(ctx context.Context, opts ...grpc.CallOption) (TaskManagerService_TaskStreamClient, error) {
+	stream, err := c.cc.NewStream(ctx, &TaskManagerService_ServiceDesc.Streams[0], "/TaskManagerService/TaskStream", opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &taskManagerServiceTaskStreamClient{stream}
+	return x, nil
 }
 
-func (c *taskServiceClient) StopTask(ctx context.Context, in *TaskStopRequest, opts ...grpc.CallOption) (*TaskResponse, error) {
-	out := new(TaskResponse)
-	err := c.cc.Invoke(ctx, "/TaskService/StopTask", in, out, opts...)
-	if err != nil {
+type TaskManagerService_TaskStreamClient interface {
+	Send(*TaskStreamRequest) error
+	Recv() (*TaskStreamResponse, error)
+	grpc.ClientStream
+}
+
+type taskManagerServiceTaskStreamClient struct {
+	grpc.ClientStream
+}
+
+func (x *taskManagerServiceTaskStreamClient) Send(m *TaskStreamRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *taskManagerServiceTaskStreamClient) Recv() (*TaskStreamResponse, error) {
+	m := new(TaskStreamResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return m, nil
 }
 
-// TaskServiceServer is the server API for TaskService service.
-// All implementations must embed UnimplementedTaskServiceServer
+// TaskManagerServiceServer is the server API for TaskManagerService service.
+// All implementations must embed UnimplementedTaskManagerServiceServer
 // for forward compatibility
-type TaskServiceServer interface {
-	ExecuteTask(context.Context, *TaskRequest) (*TaskResponse, error)
-	StopTask(context.Context, *TaskStopRequest) (*TaskResponse, error)
-	mustEmbedUnimplementedTaskServiceServer()
+type TaskManagerServiceServer interface {
+	TaskStream(TaskManagerService_TaskStreamServer) error
+	mustEmbedUnimplementedTaskManagerServiceServer()
 }
 
-// UnimplementedTaskServiceServer must be embedded to have forward compatible implementations.
-type UnimplementedTaskServiceServer struct {
+// UnimplementedTaskManagerServiceServer must be embedded to have forward compatible implementations.
+type UnimplementedTaskManagerServiceServer struct {
 }
 
-func (UnimplementedTaskServiceServer) ExecuteTask(context.Context, *TaskRequest) (*TaskResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ExecuteTask not implemented")
+func (UnimplementedTaskManagerServiceServer) TaskStream(TaskManagerService_TaskStreamServer) error {
+	return status.Errorf(codes.Unimplemented, "method TaskStream not implemented")
 }
-func (UnimplementedTaskServiceServer) StopTask(context.Context, *TaskStopRequest) (*TaskResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StopTask not implemented")
-}
-func (UnimplementedTaskServiceServer) mustEmbedUnimplementedTaskServiceServer() {}
+func (UnimplementedTaskManagerServiceServer) mustEmbedUnimplementedTaskManagerServiceServer() {}
 
-// UnsafeTaskServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to TaskServiceServer will
+// UnsafeTaskManagerServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to TaskManagerServiceServer will
 // result in compilation errors.
-type UnsafeTaskServiceServer interface {
-	mustEmbedUnimplementedTaskServiceServer()
+type UnsafeTaskManagerServiceServer interface {
+	mustEmbedUnimplementedTaskManagerServiceServer()
 }
 
-func RegisterTaskServiceServer(s grpc.ServiceRegistrar, srv TaskServiceServer) {
-	s.RegisterService(&TaskService_ServiceDesc, srv)
+func RegisterTaskManagerServiceServer(s grpc.ServiceRegistrar, srv TaskManagerServiceServer) {
+	s.RegisterService(&TaskManagerService_ServiceDesc, srv)
 }
 
-func _TaskService_ExecuteTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TaskRequest)
-	if err := dec(in); err != nil {
+func _TaskManagerService_TaskStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(TaskManagerServiceServer).TaskStream(&taskManagerServiceTaskStreamServer{stream})
+}
+
+type TaskManagerService_TaskStreamServer interface {
+	Send(*TaskStreamResponse) error
+	Recv() (*TaskStreamRequest, error)
+	grpc.ServerStream
+}
+
+type taskManagerServiceTaskStreamServer struct {
+	grpc.ServerStream
+}
+
+func (x *taskManagerServiceTaskStreamServer) Send(m *TaskStreamResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *taskManagerServiceTaskStreamServer) Recv() (*TaskStreamRequest, error) {
+	m := new(TaskStreamRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	if interceptor == nil {
-		return srv.(TaskServiceServer).ExecuteTask(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/TaskService/ExecuteTask",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TaskServiceServer).ExecuteTask(ctx, req.(*TaskRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return m, nil
 }
 
-func _TaskService_StopTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TaskStopRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(TaskServiceServer).StopTask(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/TaskService/StopTask",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TaskServiceServer).StopTask(ctx, req.(*TaskStopRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-// TaskService_ServiceDesc is the grpc.ServiceDesc for TaskService service.
+// TaskManagerService_ServiceDesc is the grpc.ServiceDesc for TaskManagerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var TaskService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "TaskService",
-	HandlerType: (*TaskServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
+var TaskManagerService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "TaskManagerService",
+	HandlerType: (*TaskManagerServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
 		{
-			MethodName: "ExecuteTask",
-			Handler:    _TaskService_ExecuteTask_Handler,
-		},
-		{
-			MethodName: "StopTask",
-			Handler:    _TaskService_StopTask_Handler,
-		},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/tasks_grpc.proto",
-}
-
-// LeaseServiceClient is the client API for LeaseService service.
-//
-// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type LeaseServiceClient interface {
-	RenewLease(ctx context.Context, in *RenewLeaseRequest, opts ...grpc.CallOption) (*RenewLeaseResponse, error)
-}
-
-type leaseServiceClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func NewLeaseServiceClient(cc grpc.ClientConnInterface) LeaseServiceClient {
-	return &leaseServiceClient{cc}
-}
-
-func (c *leaseServiceClient) RenewLease(ctx context.Context, in *RenewLeaseRequest, opts ...grpc.CallOption) (*RenewLeaseResponse, error) {
-	out := new(RenewLeaseResponse)
-	err := c.cc.Invoke(ctx, "/LeaseService/RenewLease", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// LeaseServiceServer is the server API for LeaseService service.
-// All implementations must embed UnimplementedLeaseServiceServer
-// for forward compatibility
-type LeaseServiceServer interface {
-	RenewLease(context.Context, *RenewLeaseRequest) (*RenewLeaseResponse, error)
-	mustEmbedUnimplementedLeaseServiceServer()
-}
-
-// UnimplementedLeaseServiceServer must be embedded to have forward compatible implementations.
-type UnimplementedLeaseServiceServer struct {
-}
-
-func (UnimplementedLeaseServiceServer) RenewLease(context.Context, *RenewLeaseRequest) (*RenewLeaseResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RenewLease not implemented")
-}
-func (UnimplementedLeaseServiceServer) mustEmbedUnimplementedLeaseServiceServer() {}
-
-// UnsafeLeaseServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to LeaseServiceServer will
-// result in compilation errors.
-type UnsafeLeaseServiceServer interface {
-	mustEmbedUnimplementedLeaseServiceServer()
-}
-
-func RegisterLeaseServiceServer(s grpc.ServiceRegistrar, srv LeaseServiceServer) {
-	s.RegisterService(&LeaseService_ServiceDesc, srv)
-}
-
-func _LeaseService_RenewLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RenewLeaseRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(LeaseServiceServer).RenewLease(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/LeaseService/RenewLease",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LeaseServiceServer).RenewLease(ctx, req.(*RenewLeaseRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-// LeaseService_ServiceDesc is the grpc.ServiceDesc for LeaseService service.
-// It's only intended for direct use with grpc.RegisterService,
-// and not to be introspected or modified (even as a copy)
-var LeaseService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "LeaseService",
-	HandlerType: (*LeaseServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "RenewLease",
-			Handler:    _LeaseService_RenewLease_Handler,
+			StreamName:    "TaskStream",
+			Handler:       _TaskManagerService_TaskStream_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
 	Metadata: "proto/tasks_grpc.proto",
 }

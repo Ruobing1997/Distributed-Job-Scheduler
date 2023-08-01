@@ -244,30 +244,33 @@ func SubscribeToRedisChannel() {
 func executeMatureTasks() error {
 	matureTasks := data_structure_redis.PopJobsForDispatchWithBuffer()
 	for _, task := range matureTasks {
-		fmt.Println("dispatching task: ", task.ID)
-		runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
-			constants.JOBDISPATCHED, "nil")
+		go func(task *constants.TaskCache) {
+			fmt.Println("dispatching task: ", task.ID)
+			runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
+				constants.JOBDISPATCHED, "nil")
 
-		var err error
-		err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
-			runningTaskInfo)
-		if err != nil {
-			return err
-		}
-		// TODO: need to update the lease time, the current duration is 2 seconds
-		err = data_structure_redis.SetLeaseWithID(task.ID, 2*time.Second)
-		if err != nil {
-			return err
-		}
-		// TODO: _ is the workerID, currently not used, will used for routing key in future
-		workerID, status, err := HandoutTasksForExecuting(task)
+			var err error
+			err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
+				runningTaskInfo)
+			if err != nil {
+				log.Printf("insert task %s to database failed: %v", task.ID, err)
+			}
+			// TODO: need to update the lease time, the current duration is 2 seconds
+			err = data_structure_redis.SetLeaseWithID(task.ID, 2*time.Second)
+			if err != nil {
+				log.Printf("set lease for task %s failed: %v", task.ID, err)
+			}
+			// TODO: _ is the workerID, currently not used, will used for routing key in future
+			workerID, status, err := HandoutTasksForExecuting(task)
 
-		log.Printf("dispatch task: %s and executed by %s, found error: %v", task.ID, workerID, err)
+			log.Printf("dispatch task: %s and executed by %s, found error: %v", task.ID, workerID, err)
 
-		err = updateWithDispatchResult(task, status)
-		if err != nil {
-			return err
-		}
+			err = updateWithDispatchResult(task, status)
+			if err != nil {
+				log.Printf("update task %s with dispatch result failed: %v", task.ID, err)
+			}
+		}(task)
+
 	}
 	return nil
 }
@@ -301,12 +304,17 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		// grpc timeout
-		return r.Id, constants.JOBFAILED, fmt.Errorf("grpc timeout: %v", ctxErr)
+		if r != nil {
+			return r.Id, int(r.Status), fmt.Errorf("grpc timeout: %v", ctxErr)
+		}
+		return "", constants.JOBFAILED, fmt.Errorf("grpc timeout: %v", ctxErr)
 	}
 
 	if err != nil {
-		// over time, no response
-		return r.Id, constants.JOBFAILED, fmt.Errorf("could not execute: %v", err)
+		if r != nil {
+			return r.Id, int(r.Status), fmt.Errorf("could not execute: %v", err)
+		}
+		return "", constants.JOBFAILED, fmt.Errorf("could not execute: %v", err)
 	}
 	log.Printf("Worker: %s executed task: %s with status %s", r.Id, task.ID, constants.StatusMap[int(r.Status)])
 	return r.Id, int(r.Status), nil

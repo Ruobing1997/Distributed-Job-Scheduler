@@ -22,6 +22,11 @@ var (
 	databaseClient *postgreSQL.Client
 )
 
+type Result struct {
+	ID    string
+	Error error
+}
+
 func Init() {
 	logFile, err := os.OpenFile("./logs/workers/worker-"+workerID+".log",
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -39,33 +44,44 @@ func Init() {
 	log.Printf("database set up done")
 }
 
-func ExecuteTask(task *constants.TaskCache) (string, error) {
-	log.Printf("-------------------------------------------------------")
-	log.Printf("Received update with payload: format: %d, content: %s",
-		task.Payload.Format, task.Payload.Script)
-	runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
-		constants.JOBRUNNING, workerID)
-	var err error
-	err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
-		runningTaskInfo)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+func ExecuteTask(task *constants.TaskCache) (<-chan Result, error) {
+	resultChan := make(chan Result)
 
-	go MonitorLease(ctx, task.ID)
+	go func(t *constants.TaskCache) {
+		log.Printf("-------------------------------------------------------")
+		log.Printf("Received update with payload: format: %d, content: %s",
+			t.Payload.Format, t.Payload.Script)
+		runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(t,
+			constants.JOBRUNNING, workerID)
+		var err error
+		err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
+			runningTaskInfo)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
-	switch task.Payload.Format {
-	case constants.SHELL:
-		err = executeScript(task.Payload.Script, constants.SHELL)
-	case constants.PYTHON:
-		err = executeScript(task.Payload.Script, constants.PYTHON)
-	case constants.EMAIL:
-		err = executeEmail(task.Payload.Script)
-	}
-	if err != nil {
-		return "nil", fmt.Errorf("error executing task: %s with %v", task.ID, err)
-	} else {
-		return workerID, nil
-	}
+		go MonitorLease(ctx, t.ID)
+
+		switch t.Payload.Format {
+		case constants.SHELL:
+			err = executeScript(t.Payload.Script, constants.SHELL)
+		case constants.PYTHON:
+			err = executeScript(t.Payload.Script, constants.PYTHON)
+		case constants.EMAIL:
+			err = executeEmail(t.Payload.Script)
+		}
+		if err != nil {
+			resultChan <- Result{
+				ID:    workerID,
+				Error: fmt.Errorf("error executing task: %s with %v", t.ID, err),
+			}
+		} else {
+			resultChan <- Result{
+				ID: workerID,
+			}
+		}
+	}(task)
+
+	return resultChan, nil
 }
 
 func MonitorLease(ctx context.Context, taskId string) {

@@ -29,7 +29,9 @@ var startCmd = &cobra.Command{
 		fmt.Println("MorFun_SuperNova Worker Init")
 		go dispatch.InitWorkerGRPC()
 		time.Sleep(2 * time.Second)
-		fmt.Println("All set, Worker is ready to execute tasks")
+		fmt.Println("****************************************************")
+		fmt.Println("**Worker All set, Worker is ready to execute tasks**")
+		fmt.Println("****************************************************")
 		select {} // run forever
 	},
 }

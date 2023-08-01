@@ -32,6 +32,8 @@ services:
     command: ["/app/executor", "start"]
     environment:
       MANAGER_SERVICE: "manager"
+      POSTGRES: "postgres"
+      POSTGRES_URL: "host=postgres port=5432 user=postgres password=${POSTGRES_PASSWORD} dbname=postgres sslmode=disable"
 
   redis:
     image: redis:latest

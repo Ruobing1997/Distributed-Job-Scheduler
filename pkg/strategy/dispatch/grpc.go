@@ -54,11 +54,11 @@ func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.T
 		RetriesLeft:   int(in.MaxRetryCount),
 	}
 
-	err := middleware.ExecuteTaskFuncThroughMediator(task)
+	workerID, err := middleware.ExecuteTaskFuncThroughMediator(task)
 	if err != nil {
-		return &pb.TaskResponse{Id: task.ID, Status: constants.JOBFAILED}, err
+		return &pb.TaskResponse{Id: workerID, Status: constants.JOBFAILED}, err
 	}
-	return &pb.TaskResponse{Id: task.ID, Status: constants.JOBSUCCEED}, nil
+	return &pb.TaskResponse{Id: workerID, Status: constants.JOBSUCCEED}, nil
 }
 
 func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (*pb.RenewLeaseResponse, error) {

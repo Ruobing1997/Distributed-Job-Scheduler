@@ -142,7 +142,6 @@ func GetNextJob() *constants.TaskCache {
 			log.Printf("unmarshal update cache failed: %v", err)
 		}
 	} else {
-		log.Printf("no update cache in redis")
 		return nil
 	}
 	return &e

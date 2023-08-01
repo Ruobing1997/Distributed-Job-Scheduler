@@ -5,7 +5,6 @@ package dispatch
 import (
 	"bytes"
 	"encoding/json"
-	task_executor "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-executor"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"net/http"
 )
@@ -60,7 +59,7 @@ func WorkerProcessTasks(w http.ResponseWriter, r *http.Request) (int, error) {
 	resultChannel := make(chan error)
 
 	go func() {
-		resultChannel <- task_executor.ExecuteTask(task)
+		//resultChannel <- task_executor.ExecuteTask(task)
 	}()
 
 	taskErr := <-resultChannel

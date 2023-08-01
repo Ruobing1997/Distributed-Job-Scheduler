@@ -34,7 +34,9 @@ var startCmd = &cobra.Command{
 		fmt.Println("MorFun_SuperNova Manager Start")
 		go dispatch.InitManagerGRPC()
 		time.Sleep(2 * time.Second)
-		fmt.Println("All set, you are good to go")
+		fmt.Println("****************************************************")
+		log.Printf("**MorFun_SuperNova Manager All set, you are good to go**")
+		fmt.Println("****************************************************")
 		r := gin.Default()
 
 		r.LoadHTMLGlob("./app/frontend/*/*.html")
@@ -55,7 +57,6 @@ var startCmd = &cobra.Command{
 			api.DashboardHandler(c)
 		})
 		r.Run(":9090")
-		log.Printf("MorFun_SuperNova Manager Start on port 9090")
 	},
 }
 

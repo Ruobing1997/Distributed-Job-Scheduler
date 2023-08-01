@@ -27,17 +27,18 @@ func generateTaskDB(id string, jobName string, jobType int, cronExpr string, for
 	payload := GeneratePayload(format, script)
 	callbackURL := GenerateCallBackURL(id, constants.DOMAIN)
 	taskDB := constants.TaskDB{
-		ID:            id,
-		JobName:       jobName,
-		JobType:       jobType,
-		CronExpr:      cronExpr,
-		Payload:       payload,
-		CallbackURL:   callbackURL,
-		Status:        0,
-		ExecutionTime: executionTime,
-		CreateTime:    time.Now(),
-		UpdateTime:    time.Now(),
-		Retries:       retries,
+		ID:                    id,
+		JobName:               jobName,
+		JobType:               jobType,
+		CronExpr:              cronExpr,
+		Payload:               payload,
+		CallbackURL:           callbackURL,
+		Status:                0,
+		ExecutionTime:         executionTime,
+		PreviousExecutionTime: executionTime,
+		CreateTime:            time.Now(),
+		UpdateTime:            time.Now(),
+		Retries:               retries,
 	}
 	return &taskDB
 }
@@ -73,6 +74,21 @@ func GeneratePayload(jobType int, script string) *constants.Payload {
 		Format: jobType,
 		Script: script,
 	}
+}
+
+func GenerateRunTimeTaskThroughTaskCache(task *constants.TaskCache,
+	jobStatus int, workerID string) *constants.RunTimeTask {
+	runningTaskInfo := &constants.RunTimeTask{
+		ID:            task.ID,
+		ExecutionTime: task.ExecutionTime,
+		JobType:       task.JobType,
+		JobStatus:     jobStatus,
+		RetriesLeft:   task.RetriesLeft,
+		CronExpr:      task.CronExpr,
+		WorkerID:      workerID,
+	}
+	runningTaskInfo.Payload = GeneratePayload(task.Payload.Format, task.Payload.Script)
+	return runningTaskInfo
 }
 
 func marshallTask(task constants.TaskDB) []byte {

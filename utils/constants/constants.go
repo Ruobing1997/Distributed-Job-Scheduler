@@ -12,7 +12,7 @@ type TaskDB struct {
 	CronExpr              string
 	Payload               *Payload
 	CallbackURL           string
-	Status                int
+	Status                int // pending, completed, failed
 	ExecutionTime         time.Time
 	PreviousExecutionTime time.Time // 主要解决jiffy老师提到的问题：Leader故障切换期间到期的时间都被视为执行过
 	CreateTime            time.Time
@@ -51,10 +51,11 @@ type RunTimeTask struct {
 	ID            string
 	ExecutionTime time.Time
 	JobType       int
-	JobStatus     int
+	JobStatus     int // dispatched, running
 	Payload       *Payload
 	RetriesLeft   int
 	CronExpr      string
+	WorkerID      string
 }
 
 type UserInfo struct {
@@ -86,12 +87,14 @@ func (t *RunTimeTask) Validate() error {
 	return nil
 }
 
-var statusMap = map[int]string{
+var StatusMap = map[int]string{
 	0: "Pending",
 	1: "Running",
 	2: "Completed",
 	3: "Failed",
 	4: "ReEntered",
+	5: "Retrying",
+	6: "Dispatched",
 }
 
 var resultMap = map[int]string{
@@ -105,7 +108,7 @@ var typeMap = map[int]string{
 	1: "Recurring",
 }
 
-var payloadTypeMap = map[int]string{
+var PayloadTypeMap = map[int]string{
 	0: "shell",
 	1: "python",
 	2: "email",
@@ -113,9 +116,12 @@ var payloadTypeMap = map[int]string{
 
 const DOMAIN = "localhost"
 
+const JOBRUNNING = 1
 const JOBSUCCEED = 2
 const JOBFAILED = 3
 const JOBREENTERED = 4
+const JOBRETRYING = 5
+const JOBDISPATCHED = 6
 
 const SHELL = 0
 const PYTHON = 1
@@ -138,3 +144,5 @@ const TWENTYFOURBIT = 24
 const REDISPORTOFFSET = 6900
 const RUNNING_JOBS_RECORD = "running_tasks_record"
 const TASKS_FULL_RECORD = "job_full_info"
+const ONE_TIME_JOB_RETRY_TIME = 2 * time.Second
+const RECURRING_JOB_RETRY_TIME = 2 * time.Second

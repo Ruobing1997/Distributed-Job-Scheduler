@@ -3,32 +3,56 @@ package task_executor
 import (
 	"context"
 	"fmt"
+	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/database/postgreSQL"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/middleware"
 	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
+	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"time"
 )
 
+var (
+	workerID       = os.Getenv("HOSTNAME")
+	databaseClient *postgreSQL.Client
+)
+
 func Init() {
+	logFile, err := os.OpenFile("./logs/workers/worker-"+workerID+".log",
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+
+	multiWrite := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(multiWrite)
+
 	log.Printf("Task Executor and its grpc server are initialized")
 	middleware.SetExecuteTaskFunc(ExecuteTask)
+	log.Printf("ExecuteTask function set up done")
+	databaseClient = postgreSQL.NewpostgreSQLClient()
+	log.Printf("database set up done")
 }
 
-func ExecuteTask(task *constants.TaskCache) error {
+func ExecuteTask(task *constants.TaskCache) (string, error) {
+	log.Printf("-------------------------------------------------------")
 	log.Printf("Received update with payload: format: %d, content: %s",
 		task.Payload.Format, task.Payload.Script)
-
+	runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
+		constants.JOBRUNNING, workerID)
+	var err error
+	err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
+		runningTaskInfo)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go MonitorLease(ctx, task.ID)
 
-	var err error
 	switch task.Payload.Format {
 	case constants.SHELL:
 		err = executeScript(task.Payload.Script, constants.SHELL)
@@ -38,9 +62,9 @@ func ExecuteTask(task *constants.TaskCache) error {
 		err = executeEmail(task.Payload.Script)
 	}
 	if err != nil {
-		return fmt.Errorf("error executing update: %v", err)
+		return "nil", fmt.Errorf("error executing task: %s with %v", task.ID, err)
 	} else {
-		return nil
+		return workerID, nil
 	}
 }
 
@@ -113,16 +137,17 @@ func executeScript(scriptContent string, scriptType int) error {
 		}
 		cmd = exec.Command(shellCommand, "-c", scriptContent)
 	case constants.PYTHON:
-		cmd = exec.Command("python", "-c", scriptContent)
+		cmd = exec.Command("python3", "-c", scriptContent)
 	default:
 		return fmt.Errorf("unsupported script type: %d", scriptType)
 	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%d script execution failed: %v, output: %s", scriptType, err, output)
+		return fmt.Errorf("%s script execution failed: %v, output: %s",
+			constants.PayloadTypeMap[scriptType], err, output)
 	}
-	log.Printf("%d script executed successfully: %s", scriptType, output)
+	log.Printf("%s script executed successfully: %s", constants.PayloadTypeMap[scriptType], output)
 	return nil
 }
 

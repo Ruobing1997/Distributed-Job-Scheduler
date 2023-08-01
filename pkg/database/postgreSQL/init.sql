@@ -1,4 +1,3 @@
-
 CREATE TABLE IF NOT EXISTS job_full_info (
     id VARCHAR(255) PRIMARY KEY,
     job_name VARCHAR(255) NOT NULL,
@@ -9,6 +8,7 @@ CREATE TABLE IF NOT EXISTS job_full_info (
     callback_url VARCHAR(255),
     status INTEGER NOT NULL,
     execution_time TIMESTAMP,
+    previous_execution_time TIMESTAMP,
     create_time TIMESTAMP NOT NULL,
     update_time TIMESTAMP NOT NULL,
     retries INTEGER NOT NULL
@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS running_tasks_record
     execute_format INTEGER NOT NULL,
     execute_script VARCHAR(255),
     retries_left int NOT NULL,
-    cron_expression VARCHAR(255)
+    cron_expression VARCHAR(255),
+    worker_id VARCHAR(255)
     );
 
 CREATE INDEX IF NOT EXISTS execution_record_job_status_idx ON running_tasks_record (job_status);
+CREATE INDEX IF NOT EXISTS execution_record_worker_id_idx ON running_tasks_record (worker_id);

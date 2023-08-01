@@ -23,7 +23,7 @@ type Client struct {
 func NewpostgreSQLClient() *Client {
 	db, err := sql.Open(os.Getenv("POSTGRES"), os.Getenv("POSTGRES_URL"))
 	if err != nil {
-		log.Printf("Error opening database: %s", err.Error())
+		log.Fatalf("Error opening database: %s", err.Error())
 	}
 	return &Client{db: db}
 }
@@ -36,23 +36,17 @@ func (c *Client) InsertTask(ctx context.Context, table string, record databaseha
 		if !ok {
 			return errors.New("invalid data record")
 		}
-		query := `INSERT INTO job_full_info 
-        (id, job_name, job_type, cron_expr, execute_format, execute_script, callback_url, status, execution_time, 
-         create_time, update_time, retries) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
-		_, err = c.db.ExecContext(ctx, query, taskDB.ID, taskDB.JobName, taskDB.JobType,
+		_, err = c.db.ExecContext(ctx, InsertOrUpdateTaskFullInfo,
+			taskDB.ID, taskDB.JobName, taskDB.JobType,
 			taskDB.CronExpr, taskDB.Payload.Format, taskDB.Payload.Script, taskDB.CallbackURL,
-			taskDB.Status, taskDB.ExecutionTime,
+			taskDB.Status, taskDB.ExecutionTime, taskDB.PreviousExecutionTime,
 			taskDB.CreateTime, taskDB.UpdateTime, taskDB.Retries)
 	case constants.RUNNING_JOBS_RECORD:
 		runTimeTask, ok := record.(*constants.RunTimeTask)
 		if !ok {
 			return errors.New("invalid data record")
 		}
-		query := `INSERT INTO running_tasks_record (id, execution_time, job_type, job_status,
-                                  execute_format, execute_script, retries_left, cron_expression) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
-		_, err = c.db.ExecContext(ctx, query,
+		_, err = c.db.ExecContext(ctx, InsertOrUpdateRunningTask,
 			runTimeTask.ID,
 			runTimeTask.ExecutionTime,
 			runTimeTask.JobType,
@@ -60,10 +54,11 @@ func (c *Client) InsertTask(ctx context.Context, table string, record databaseha
 			runTimeTask.Payload.Format,
 			runTimeTask.Payload.Script,
 			runTimeTask.RetriesLeft,
-			runTimeTask.CronExpr)
+			runTimeTask.CronExpr,
+			runTimeTask.WorkerID)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("error inserting/updating task: %s", err.Error())
 	}
 	return nil
 }
@@ -76,10 +71,10 @@ func (c *Client) GetTaskByID(ctx context.Context, table string, id string, args 
 		var format int
 		var script string
 		err := c.db.QueryRowContext(ctx, query, id).Scan(&taskDB.ID, &taskDB.JobName, &taskDB.JobType, &taskDB.CronExpr,
-			&format, &script, &taskDB.CallbackURL, &taskDB.Status, &taskDB.ExecutionTime,
+			&format, &script, &taskDB.CallbackURL, &taskDB.Status, &taskDB.ExecutionTime, &taskDB.PreviousExecutionTime,
 			&taskDB.CreateTime, &taskDB.UpdateTime, &taskDB.Retries)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error getting task by id: %s", err.Error())
 		}
 		taskDB.Payload = &constants.Payload{
 			Format: format,
@@ -91,10 +86,18 @@ func (c *Client) GetTaskByID(ctx context.Context, table string, id string, args 
 		var runtimeJobInfo constants.RunTimeTask
 		var format int
 		var script string
-		err := c.db.QueryRowContext(ctx, query, id).Scan(&runtimeJobInfo.ID, &runtimeJobInfo.ExecutionTime, &runtimeJobInfo.JobType,
-			&runtimeJobInfo.JobStatus, &format, &script, &runtimeJobInfo.RetriesLeft, &runtimeJobInfo.CronExpr)
+		err := c.db.QueryRowContext(ctx, query, id).Scan(
+			&runtimeJobInfo.ID,
+			&runtimeJobInfo.ExecutionTime,
+			&runtimeJobInfo.JobType,
+			&runtimeJobInfo.JobStatus,
+			&format,
+			&script,
+			&runtimeJobInfo.RetriesLeft,
+			&runtimeJobInfo.CronExpr,
+			&runtimeJobInfo.WorkerID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error getting task by id: %s", err.Error())
 		}
 		runtimeJobInfo.Payload = &constants.Payload{
 			Format: format,
@@ -124,7 +127,7 @@ func (c *Client) GetTasksInInterval(startTime time.Time, endTime time.Time, time
 		var script string
 		err := rows.Scan(&taskDB.ID, &taskDB.JobName, &taskDB.JobType, &taskDB.CronExpr,
 			&format, &script, &taskDB.CallbackURL, &taskDB.Status, &taskDB.ExecutionTime,
-			&taskDB.CreateTime, &taskDB.UpdateTime, &taskDB.Retries)
+			&taskDB.PreviousExecutionTime, &taskDB.CreateTime, &taskDB.UpdateTime, &taskDB.Retries)
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +152,8 @@ func (c *Client) DeleteByID(ctx context.Context, table string, id string) error 
 	return nil
 }
 
-func (c *Client) UpdateByID(ctx context.Context, table string, id string, args map[string]interface{}) error {
+func (c *Client) UpdateByID(ctx context.Context, table string, id string,
+	args map[string]interface{}) error {
 	var setValues []string
 	var values []interface{}
 	i := 1
@@ -163,7 +167,7 @@ func (c *Client) UpdateByID(ctx context.Context, table string, id string, args m
 	values = append(values, id)
 	_, err := c.db.ExecContext(ctx, query, values...)
 	if err != nil {
-		return err
+		return fmt.Errorf("error updating execution record: %s", err.Error())
 	}
 	return nil
 }
@@ -204,7 +208,7 @@ func (c *Client) GetAllTasks() ([]*constants.TaskDB, error) {
 		var script string
 		err := rows.Scan(&taskDB.ID, &taskDB.JobName, &taskDB.JobType, &taskDB.CronExpr,
 			&format, &script, &taskDB.CallbackURL, &taskDB.Status, &taskDB.ExecutionTime,
-			&taskDB.CreateTime, &taskDB.UpdateTime, &taskDB.Retries)
+			&taskDB.PreviousExecutionTime, &taskDB.CreateTime, &taskDB.UpdateTime, &taskDB.Retries)
 		if err != nil {
 			return nil, err
 		}

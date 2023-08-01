@@ -5,15 +5,15 @@ import (
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 )
 
-var executeTaskFunc func(task *constants.TaskCache) error
+var executeTaskFunc func(task *constants.TaskCache) (string, error)
 
-func SetExecuteTaskFunc(f func(task *constants.TaskCache) error) {
+func SetExecuteTaskFunc(f func(task *constants.TaskCache) (string, error)) {
 	executeTaskFunc = f
 }
 
-func ExecuteTaskFuncThroughMediator(task *constants.TaskCache) error {
+func ExecuteTaskFuncThroughMediator(task *constants.TaskCache) (string, error) {
 	if executeTaskFunc != nil {
 		return executeTaskFunc(task)
 	}
-	return fmt.Errorf("ExecuteTask function not set")
+	return "nil", fmt.Errorf("ExecuteTask function not set")
 }

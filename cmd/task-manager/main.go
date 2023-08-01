@@ -56,6 +56,9 @@ var startCmd = &cobra.Command{
 		r.GET("/api/dashboard", func(c *gin.Context) {
 			api.DashboardHandler(c)
 		})
+		r.GET("/api/running_tasks", func(c *gin.Context) {
+			api.RunningTasksHandler(c)
+		})
 		r.Run(":9090")
 	},
 }

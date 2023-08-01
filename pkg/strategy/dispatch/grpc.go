@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc"
 	"log"
 	"net"
-	"time"
 )
 
 type ServerImpl struct {
@@ -63,7 +62,7 @@ func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.T
 
 func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (*pb.RenewLeaseResponse, error) {
 	// worker should ask for a new lease before the current lease expires
-	err := data_structure_redis.SetLeaseWithID(in.Id, 2*time.Second)
+	err := data_structure_redis.SetLeaseWithID(in.Id, in.LeaseDuration.AsDuration())
 	if err != nil {
 		return &pb.RenewLeaseResponse{Success: false},
 			fmt.Errorf("lease for update %s has expired", in.Id)

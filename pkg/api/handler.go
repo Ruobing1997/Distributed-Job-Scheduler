@@ -159,3 +159,12 @@ func DashboardHandler(c *gin.Context) {
 	}
 	c.HTML(http.StatusOK, "dashboard_index.html", tasks)
 }
+
+func RunningTasksHandler(c *gin.Context) {
+	tasks, err := task_manager.HandleGetRunningTasks()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.HTML(http.StatusOK, "running_tasks_dashboard_index.html", tasks)
+}

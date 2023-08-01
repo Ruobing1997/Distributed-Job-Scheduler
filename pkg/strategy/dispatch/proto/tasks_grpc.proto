@@ -3,6 +3,7 @@ syntax = "proto3";
 option go_package = "./task_grpc";
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 
 service TaskService {
   rpc ExecuteTask(TaskRequest) returns (TaskResponse);
@@ -36,7 +37,7 @@ message TaskResponse {
 
 message RenewLeaseRequest {
   string id = 1;
-  google.protobuf.Timestamp new_lease_time = 2;
+  google.protobuf.Duration lease_duration = 2;
 }
 
 message RenewLeaseResponse {

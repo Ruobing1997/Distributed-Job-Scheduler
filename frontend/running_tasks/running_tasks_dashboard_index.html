@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,36 +12,43 @@
             margin: 0;
             padding: 20px;
         }
+
         h1 {
             color: #007bff;
             text-align: center;
             margin-bottom: 20px;
         }
+
         table {
             border-collapse: collapse;
             width: 100%;
             border: 1px solid #ddd;
             background-color: white;
         }
-        th, td {
+
+        th,
+        td {
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
         }
+
         th {
             background-color: #007bff;
             color: white;
         }
+
         tr:hover {
             background-color: #f2f2f2;
         }
+
         a {
             color: #007bff;
             text-decoration: none;
         }
+
         .btn {
-            display: block;
-            margin: 20px auto;
+            display: inline-block;
             background-color: #007bff;
             color: white;
             padding: 10px 20px;
@@ -49,14 +57,17 @@
             cursor: pointer;
             transition: background-color 0.3s;
         }
+
         .btn:hover {
             background-color: #0056b3;
         }
+
         .btn-container {
             display: flex;
             justify-content: center;
-            margin-top: 20px;
+            margin: 20px 0;
         }
+
         button {
             background-color: #007bff;
             color: white;
@@ -66,74 +77,57 @@
             cursor: pointer;
             transition: background-color 0.3s;
         }
+
         button:hover {
             background-color: #0056b3;
         }
-    </style>
-    <script>
-        function deleteTask(taskId) {
-            fetch(`task/${taskId}/delete`, {
-                method: 'DELETE'
-            }).then(response => {
-                if (response.ok) {
-                    alert('Task deleted successfully!')
-                    window.location.reload()
-                } else {
-                    alert('Failed to delete task!')
-                }
-            }).catch(error => {
-                alert('Failed to delete task!')
-                console.error("Delete task error: ", error)
-            })
+
+        .content-container {
+            display: flex;
+            justify-content: space-between;
         }
-    </script>
+
+        .half {
+            width: 48%; /* 为了有一些间隙 */
+            overflow-x: auto; /* 水平滚动条 */
+        }
+    </style>
 </head>
+
 <body>
-<h1>Dashboard</h1>
+<h1>Running Tasks Dashboard</h1>
 <table>
     <thead>
     <tr>
         <th>ID</th>
-        <th>Job Name</th>
+        <th>Execution Time</th>
         <th>Job Type</th>
-        <th>Cron Expression</th>
+        <th>Job Status</th>
         <th>Payload Format</th>
         <th>Payload Script</th>
-        <th>Callback URL</th>
-        <th>Status</th>
-        <th>Execution Time</th>
-        <th>Previous Execution Time</th>
-        <th>Create Time</th>
-        <th>Update Time</th>
-        <th>Retries</th>
-        <th>Actions</th>
+        <th>Retries Left</th>
+        <th>Cron Expression</th>
+        <th>Worker ID</th>
     </tr>
     </thead>
     <tbody>
     <!-- 使用后端模板技术填充数据 -->
     {{range .}}
     <tr>
-        <td><a href="task/{{.ID}}">{{.ID}}</a></td>
-        <td>{{.JobName}}</td>
+        <td>{{.ID}}</td>
+        <td>{{.ExecutionTime}}</td>
         <td>{{.JobType}}</td>
-        <td>{{.CronExpr}}</td>
+        <td>{{.JobStatus}}</td>
         <td>{{.Payload.Format}}</td>
         <td>{{.Payload.Script}}</td>
-        <td>{{.CallbackURL}}</td>
-        <td>{{.Status}}</td>
-        <td>{{.ExecutionTime}}</td>
-        <td>{{.PreviousExecutionTime}}</td>
-        <td>{{.CreateTime}}</td>
-        <td>{{.UpdateTime}}</td>
-        <td>{{.Retries}}</td>
-        <td>
-            <button onclick="deleteTask('{{.ID}}')">Delete</button>
-        </td>
+        <td>{{.RetriesLeft}}</td>
+        <td>{{.CronExpr}}</td>
+        <td>{{.WorkerID}}</td>
     </tr>
     {{end}}
     </tbody>
 </table>
-<a href="../generate/generate_index.html" class="btn">Add New Task</a>
-<a href="running_tasks" class="btn">Check Running Tasks</a>
+
 </body>
+
 </html>

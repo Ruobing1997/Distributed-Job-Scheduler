@@ -223,3 +223,32 @@ func (c *Client) GetAllTasks() ([]*constants.TaskDB, error) {
 	}
 	return tasks, nil
 }
+
+func (c *Client) GetAllRunningTasks() ([]*constants.RunTimeTask, error) {
+	query := `SELECT * FROM running_tasks_record`
+	rows, err := c.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	var runTimeTasks []*constants.RunTimeTask
+	for rows.Next() {
+		var runTimeTask constants.RunTimeTask
+		var format int
+		var script string
+		err := rows.Scan(&runTimeTask.ID, &runTimeTask.ExecutionTime, &runTimeTask.JobType,
+			&runTimeTask.JobStatus, &format, &script, &runTimeTask.RetriesLeft,
+			&runTimeTask.CronExpr, &runTimeTask.WorkerID)
+		if err != nil {
+			return nil, err
+		}
+		runTimeTask.Payload = &constants.Payload{
+			Format: format,
+			Script: script,
+		}
+		runTimeTasks = append(runTimeTasks, &runTimeTask)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return runTimeTasks, nil
+}

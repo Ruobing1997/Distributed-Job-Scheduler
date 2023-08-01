@@ -200,6 +200,8 @@ func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 }
 
 func SetLeaseWithID(taskID string, duration time.Duration) error {
+	log.Printf("----------------------------")
+	log.Printf("set lease for task %s", taskID)
 	leaseKey := fmt.Sprintf("lease:update:%s", taskID)
 	err := client.SetEx(context.Background(), leaseKey, REDIS_LEASE_MAP_VALUE_PROCESSING, duration).Err()
 	if err != nil {

@@ -132,8 +132,10 @@ const Recurring = 1
 
 const MONGOURI = "mongodb://localhost:27017"
 
-const GRPC_TIMEOUT = time.Second
-const LEASE_DURATION = time.Second
+const EXECUTE_TASK_GRPC_TIMEOUT = time.Minute
+const RENEW_LEASE_GRPC_TIMEOUT = time.Second
+
+const LEASE_DURATION = 2 * time.Second
 const LEASE_RENEW_INTERVAL = time.Second // renew lease every 1 second
 const OFFSET = 10000
 

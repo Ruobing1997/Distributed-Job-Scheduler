@@ -48,7 +48,9 @@ func GenerateCallBackURL(id string, domain string) string {
 }
 
 func DecryptCronExpress(cronExpr string) time.Time {
-	schedule, err := cron.ParseStandard(cronExpr)
+	parser := cron.NewParser(cron.SecondOptional | cron.Minute |
+		cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	schedule, err := parser.Parse(cronExpr)
 	if err != nil {
 		panic(err)
 	}

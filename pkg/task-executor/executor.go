@@ -9,7 +9,7 @@ import (
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"io"
 	"log"
 	"os"
@@ -69,6 +69,8 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 }
 
 func MonitorLease(ctx context.Context, taskId string) {
+	log.Printf("-------------------------------------------------------")
+	log.Printf("Worker: %s is monitoring lease for update: %s", workerID, taskId)
 	ticker := time.NewTicker(constants.LEASE_RENEW_INTERVAL)
 	defer ticker.Stop()
 
@@ -77,7 +79,8 @@ func MonitorLease(ctx context.Context, taskId string) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			err := WorkerRenewLease(taskId, time.Now().Add(constants.LEASE_DURATION))
+			log.Printf("Worker: %s is renewing lease for update: %s", workerID, taskId)
+			err := WorkerRenewLease(taskId, constants.LEASE_DURATION)
 			if err != nil {
 				log.Printf("failed to renew lease for update %s: %v", taskId, err)
 			}
@@ -86,7 +89,7 @@ func MonitorLease(ctx context.Context, taskId string) {
 
 }
 
-func RenewLease(taskID string, newLeaseTime time.Time) (bool, error) {
+func RenewLease(taskID string, duration time.Duration) (bool, error) {
 	managerService := os.Getenv("MANAGER_SERVICE")
 	if managerService == "" {
 		managerService = MANAGER_SERVICE
@@ -98,12 +101,12 @@ func RenewLease(taskID string, newLeaseTime time.Time) (bool, error) {
 	defer conn.Close()
 	client := pb.NewLeaseServiceClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), constants.GRPC_TIMEOUT)
+	ctx, cancel := context.WithTimeout(context.Background(), constants.RENEW_LEASE_GRPC_TIMEOUT)
 	defer cancel()
 
 	success, err := client.RenewLease(ctx, &pb.RenewLeaseRequest{
-		Id:           taskID,
-		NewLeaseTime: timestamppb.New(newLeaseTime),
+		Id:            taskID,
+		LeaseDuration: durationpb.New(duration),
 	})
 
 	if err != nil {
@@ -113,8 +116,8 @@ func RenewLease(taskID string, newLeaseTime time.Time) (bool, error) {
 	return success.Success, nil
 }
 
-func WorkerRenewLease(taskID string, newLeaseTime time.Time) error {
-	success, err := RenewLease(taskID, newLeaseTime)
+func WorkerRenewLease(taskID string, duration time.Duration) error {
+	success, err := RenewLease(taskID, duration)
 	if err != nil {
 		return err
 	}

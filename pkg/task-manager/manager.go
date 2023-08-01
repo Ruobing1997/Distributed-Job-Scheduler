@@ -104,10 +104,13 @@ func addJobToRedis(taskDB *constants.TaskDB) {
 // HandleNewTasks handles new tasks from API,  这里应该是入口函数。主要做创建任务的逻辑
 func HandleNewTasks(name string, taskType int, cronExpression string,
 	format int, script string, callBackURL string, retries int) (string, error) {
+	log.Printf("----------------------------------")
 	// get update generated form generator
 	taskDB := generator.GenerateTask(name, taskType,
 		cronExpression, format, script, retries)
+	log.Printf("Handle New Task")
 	// insert update to database
+	log.Printf("Inserting task to database: %s", taskDB.ID)
 	err := databaseClient.InsertTask(context.Background(), constants.TASKS_FULL_RECORD, taskDB)
 	if err != nil {
 		return "nil", err
@@ -121,10 +124,13 @@ func HandleNewTasks(name string, taskType int, cronExpression string,
 }
 
 func HandleDeleteTasks(taskID string) error {
+	log.Printf("----------------------------------")
+	log.Printf("Handle Delete Task")
 	// if the update is running, stop it
 	// check the running_tasks_record board to see the job is running or not
 	_, err := databaseClient.GetTaskByID(context.Background(), constants.RUNNING_JOBS_RECORD, taskID)
 	if err != nil {
+		log.Printf("Task %s is not running, delete it from database, see err: %v", taskID, err)
 		// apply the same logic as the following
 		// if the update is in redis priority queue, delete it and delete it from database
 		// if the update is in database, delete it from database
@@ -136,6 +142,7 @@ func HandleDeleteTasks(taskID string) error {
 			return nil
 		}
 	} else {
+		log.Printf("Task %s is running, wait it to finish the current turn, see err: %v", taskID, err)
 		// record found, stop the job
 		//runTimeJob := record.(*constants.RunTimeTask)
 		//workerId, status, err := dispatch.StopRunningTask(runTimeJob)
@@ -186,6 +193,14 @@ func HandleGetTasks(taskID string) (*constants.TaskDB, error) {
 
 func HandleGetAllTasks() ([]*constants.TaskDB, error) {
 	tasks, err := databaseClient.GetAllTasks()
+	if err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
+func HandleGetRunningTasks() ([]*constants.RunTimeTask, error) {
+	tasks, err := databaseClient.GetAllRunningTasks()
 	if err != nil {
 		return nil, err
 	}
@@ -245,9 +260,9 @@ func executeMatureTasks() error {
 			return err
 		}
 		// TODO: _ is the workerID, currently not used, will used for routing key in future
-		_, status, err := HandoutTasksForExecuting(task)
+		workerID, status, err := HandoutTasksForExecuting(task)
 
-		log.Printf("dispatch task: %s, found error: %v", task.ID, err)
+		log.Printf("dispatch task: %s and executed by %s, found error: %v", task.ID, workerID, err)
 
 		err = updateWithDispatchResult(task, status)
 		if err != nil {
@@ -269,7 +284,7 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 	defer conn.Close()
 	client := pb.NewTaskServiceClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), constants.GRPC_TIMEOUT)
+	ctx, cancel := context.WithTimeout(context.Background(), constants.EXECUTE_TASK_GRPC_TIMEOUT)
 	defer cancel()
 
 	payload := &pb.Payload{
@@ -284,9 +299,14 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 		MaxRetryCount: int32(task.RetriesLeft),
 	})
 
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		// grpc timeout
+		return r.Id, constants.JOBFAILED, fmt.Errorf("grpc timeout: %v", ctxErr)
+	}
+
 	if err != nil {
 		// over time, no response
-		return task.ID, constants.JOBFAILED, fmt.Errorf("could not execute: %v", err)
+		return r.Id, constants.JOBFAILED, fmt.Errorf("could not execute: %v", err)
 	}
 	log.Printf("Worker: %s executed task: %s with status %s", r.Id, task.ID, constants.StatusMap[int(r.Status)])
 	return r.Id, int(r.Status), nil

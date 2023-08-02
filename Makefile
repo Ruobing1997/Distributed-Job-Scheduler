@@ -1,14 +1,10 @@
-.PHONY: pull-redis up down build
+.PHONY: clean-service clean-deployments get-pods
 
+clean-service:
+	kubectl delete service --all -n supernova
 
-pull-redis:
-	docker pull redis:latest
+clean-deployments:
+	kubectl delete deployments --all -n supernova
 
-up:
-	docker-compose up -d
-
-down:
-	docker-compose down
-
-build:
-	docker-compose build
+get-pods:
+	kubectl get pods -n supernova

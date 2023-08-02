@@ -41,6 +41,11 @@ type ServerImpl struct {
 	pb.UnimplementedLeaseServiceServer
 }
 
+type ServerControlInterface interface {
+	StartAPIServer()
+	StopAPIServer() error
+}
+
 func InitConnection() {
 	timeTracker = time.Now()
 	logFile, err := os.OpenFile("./logs/managers/manager-"+managerID+".log",
@@ -68,7 +73,7 @@ func InitManagerGRPC() {
 	}
 }
 
-func InitLeaderElection() {
+func InitLeaderElection(control ServerControlInterface) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		log.Fatalf("error getting k8s config: %v", err)
@@ -98,10 +103,10 @@ func InitLeaderElection() {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				log.Printf("manager: %v started leading", managerID)
-				// TODO: Add start logic
 				InitConnection()
 				go InitManagerGRPC()
 				Start()
+				control.StartAPIServer()
 			},
 			OnStoppedLeading: func() {
 				log.Printf("manager: %v stopped leading", managerID)
@@ -112,15 +117,16 @@ func InitLeaderElection() {
 				if err := redisClient.Close(); err != nil {
 					log.Fatalf("error closing redis client: %v", err)
 				}
+				if err := control.StopAPIServer(); err != nil {
+					log.Fatalf("error stopping API server: %v", err)
+				}
 			}, OnNewLeader: func(identity string) {
-				log.Printf("new leader elected: %v", identity)
-				InitConnection()
-				go InitManagerGRPC()
-				Start()
+				if identity != managerID {
+					log.Printf("new leader elected: %v", identity)
+				}
 			},
 		},
 	})
-
 }
 
 func Start() {

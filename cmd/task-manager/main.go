@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/api"
 	task_manager "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-manager"
@@ -8,9 +9,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
 	"log"
+	"net/http"
 	"os"
 	"time"
 )
+
+type ServerControl struct{}
+
+var server *http.Server
 
 var rootCmd = &cobra.Command{
 	Use:   "manager",
@@ -28,36 +34,61 @@ var startCmd = &cobra.Command{
 	Short: "Start Run MorFun_SuperNova Manager",
 	Long:  "Start Run MorFun_SuperNova Manager, make manager to listen to tasks and dispatch them when needed",
 	Run: func(cmd *cobra.Command, args []string) {
-		task_manager.InitLeaderElection()
-		fmt.Println("MorFun_SuperNova Manager Start Leader Election")
-		time.Sleep(2 * time.Second)
 		fmt.Println("***********************************************************")
 		fmt.Println("***MorFun_SuperNova Manager All set, you are good to go***")
 		fmt.Println("***********************************************************")
-		r := gin.Default()
-		r.Use(cors.Default())
-		r.LoadHTMLGlob("./app/frontend/*/*.html")
-
-		r.POST("/api/generate", func(c *gin.Context) {
-			api.GenerateTaskHandler(c)
-		})
-		r.DELETE("/api/task/:id/delete", func(c *gin.Context) {
-			api.DeleteTaskHandler(c)
-		})
-		r.GET("/api/task/:id", func(c *gin.Context) {
-			api.GetTaskHandler(c)
-		})
-		r.PUT("/api/task/:id/update", func(c *gin.Context) {
-			api.UpdateTaskHandler(c)
-		})
-		r.GET("/api/dashboard", func(c *gin.Context) {
-			api.DashboardHandler(c)
-		})
-		r.GET("/api/running_tasks", func(c *gin.Context) {
-			api.RunningTasksHandler(c)
-		})
-		r.Run(":9090")
+		managerControl := &ServerControl{}
+		task_manager.InitLeaderElection(managerControl)
+		fmt.Println("MorFun_SuperNova Manager Start Leader Election")
+		time.Sleep(2 * time.Second)
 	},
+}
+
+func (*ServerControl) StartAPIServer() {
+	r := gin.Default()
+	r.Use(cors.Default())
+	r.LoadHTMLGlob("./app/frontend/*/*.html")
+
+	r.POST("/api/generate", func(c *gin.Context) {
+		api.GenerateTaskHandler(c)
+	})
+	r.DELETE("/api/task/:id/delete", func(c *gin.Context) {
+		api.DeleteTaskHandler(c)
+	})
+	r.GET("/api/task/:id", func(c *gin.Context) {
+		api.GetTaskHandler(c)
+	})
+	r.PUT("/api/task/:id/update", func(c *gin.Context) {
+		api.UpdateTaskHandler(c)
+	})
+	r.GET("/api/dashboard", func(c *gin.Context) {
+		api.DashboardHandler(c)
+	})
+	r.GET("/api/running_tasks", func(c *gin.Context) {
+		api.RunningTasksHandler(c)
+	})
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "pong",
+		})
+	})
+
+	server = &http.Server{
+		Addr:    ":9090",
+		Handler: r,
+	}
+
+	server.ListenAndServe()
+}
+
+func (*ServerControl) StopAPIServer() error {
+	if server != nil {
+		err := server.Shutdown(context.Background())
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func init() {

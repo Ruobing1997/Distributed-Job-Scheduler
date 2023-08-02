@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: manager
+  namespace: supernova
+  labels:
+    app: manager
+spec:
+  containers:
+    - name: manager-container
+      image: morefun-supernova-manager:2.0
+      imagePullPolicy: IfNotPresent
+      ports:
+        - containerPort: 9090
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 9090
+        initialDelaySeconds: 10
+        periodSeconds: 5
+        timeoutSeconds: 5
+        failureThreshold: 3
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 9090
+        initialDelaySeconds: 10
+        periodSeconds: 5
+        timeoutSeconds: 5
+        failureThreshold: 3
+  restartPolicy: Always
+  

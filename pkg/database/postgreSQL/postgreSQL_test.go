@@ -2,6 +2,7 @@ package postgreSQL
 
 import (
 	"context"
+	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -153,4 +154,10 @@ func TestGetTaskByIDFORRUNNINGTASKSRECORD(t *testing.T) {
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
+}
+
+func TestClient_GetTaskByID(t *testing.T) {
+	client := NewpostgreSQLClient()
+	task, err := client.GetTaskByID(context.Background(), constants.RUNNING_JOBS_RECORD, "task_002")
+	fmt.Println(task, err)
 }

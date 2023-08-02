@@ -23,7 +23,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type TaskServiceClient interface {
 	ExecuteTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskResponse, error)
-	StopTask(ctx context.Context, in *TaskStopRequest, opts ...grpc.CallOption) (*TaskResponse, error)
+	NotifyTaskStatus(ctx context.Context, in *NotifyMessageRequest, opts ...grpc.CallOption) (*NotifyMessageResponse, error)
 }
 
 type taskServiceClient struct {
@@ -43,9 +43,9 @@ func (c *taskServiceClient) ExecuteTask(ctx context.Context, in *TaskRequest, op
 	return out, nil
 }
 
-func (c *taskServiceClient) StopTask(ctx context.Context, in *TaskStopRequest, opts ...grpc.CallOption) (*TaskResponse, error) {
-	out := new(TaskResponse)
-	err := c.cc.Invoke(ctx, "/TaskService/StopTask", in, out, opts...)
+func (c *taskServiceClient) NotifyTaskStatus(ctx context.Context, in *NotifyMessageRequest, opts ...grpc.CallOption) (*NotifyMessageResponse, error) {
+	out := new(NotifyMessageResponse)
+	err := c.cc.Invoke(ctx, "/TaskService/NotifyTaskStatus", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (c *taskServiceClient) StopTask(ctx context.Context, in *TaskStopRequest, o
 // for forward compatibility
 type TaskServiceServer interface {
 	ExecuteTask(context.Context, *TaskRequest) (*TaskResponse, error)
-	StopTask(context.Context, *TaskStopRequest) (*TaskResponse, error)
+	NotifyTaskStatus(context.Context, *NotifyMessageRequest) (*NotifyMessageResponse, error)
 	mustEmbedUnimplementedTaskServiceServer()
 }
 
@@ -68,8 +68,8 @@ type UnimplementedTaskServiceServer struct {
 func (UnimplementedTaskServiceServer) ExecuteTask(context.Context, *TaskRequest) (*TaskResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExecuteTask not implemented")
 }
-func (UnimplementedTaskServiceServer) StopTask(context.Context, *TaskStopRequest) (*TaskResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StopTask not implemented")
+func (UnimplementedTaskServiceServer) NotifyTaskStatus(context.Context, *NotifyMessageRequest) (*NotifyMessageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NotifyTaskStatus not implemented")
 }
 func (UnimplementedTaskServiceServer) mustEmbedUnimplementedTaskServiceServer() {}
 
@@ -102,20 +102,20 @@ func _TaskService_ExecuteTask_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _TaskService_StopTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TaskStopRequest)
+func _TaskService_NotifyTaskStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NotifyMessageRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(TaskServiceServer).StopTask(ctx, in)
+		return srv.(TaskServiceServer).NotifyTaskStatus(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/TaskService/StopTask",
+		FullMethod: "/TaskService/NotifyTaskStatus",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TaskServiceServer).StopTask(ctx, req.(*TaskStopRequest))
+		return srv.(TaskServiceServer).NotifyTaskStatus(ctx, req.(*NotifyMessageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -132,8 +132,8 @@ var TaskService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _TaskService_ExecuteTask_Handler,
 		},
 		{
-			MethodName: "StopTask",
-			Handler:    _TaskService_StopTask_Handler,
+			MethodName: "NotifyTaskStatus",
+			Handler:    _TaskService_NotifyTaskStatus_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

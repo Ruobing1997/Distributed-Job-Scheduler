@@ -57,7 +57,7 @@ func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.T
 	if err != nil {
 		return &pb.TaskResponse{Id: workerID, Status: constants.JOBFAILED}, err
 	}
-	return &pb.TaskResponse{Id: workerID, Status: constants.JOBSUCCEED}, nil
+	return &pb.TaskResponse{Id: workerID, Status: constants.JOBDISPATCHED}, nil
 }
 
 func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (*pb.RenewLeaseResponse, error) {
@@ -68,14 +68,4 @@ func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (
 			fmt.Errorf("lease for update %s has expired", in.Id)
 	}
 	return &pb.RenewLeaseResponse{Success: true}, nil
-}
-
-func (s *ServerImpl) StopTask(ctx context.Context, in *pb.TaskStopRequest) (*pb.TaskResponse, error) {
-	// Similar with ExecuteTask, but it is to stop a update
-	return nil, nil // TODO
-}
-
-func StopRunningTask(runningTask *constants.RunTimeTask) (string, int, error) {
-	// TODO
-	return "", 0, nil
 }

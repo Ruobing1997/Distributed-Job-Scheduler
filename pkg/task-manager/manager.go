@@ -30,6 +30,11 @@ var (
 	managerID            = os.Getenv("HOSTNAME")
 )
 
+type ServerImpl struct {
+	pb.UnimplementedTaskServiceServer
+	pb.UnimplementedLeaseServiceServer
+}
+
 func Init() {
 	timeTracker = time.Now()
 	logFile, err := os.OpenFile("./logs/managers/manager-"+managerID+".log",
@@ -128,8 +133,8 @@ func HandleDeleteTasks(taskID string) error {
 	log.Printf("Handle Delete Task")
 	// if the update is running, stop it
 	// check the running_tasks_record board to see the job is running or not
-	_, err := databaseClient.GetTaskByID(context.Background(), constants.RUNNING_JOBS_RECORD, taskID)
-	if err != nil {
+	record, err := databaseClient.GetTaskByID(context.Background(), constants.RUNNING_JOBS_RECORD, taskID)
+	if record == nil || err != nil {
 		log.Printf("Task %s is not running, delete it from database, see err: %v", taskID, err)
 		// apply the same logic as the following
 		// if the update is in redis priority queue, delete it and delete it from database
@@ -143,16 +148,12 @@ func HandleDeleteTasks(taskID string) error {
 		}
 	} else {
 		log.Printf("Task %s is running, wait it to finish the current turn, see err: %v", taskID, err)
-		// record found, stop the job
-		//runTimeJob := record.(*constants.RunTimeTask)
-		//workerId, status, err := dispatch.StopRunningTask(runTimeJob)
-		//log.Printf("workerId: %s, status: %s, err: %v", workerId, status, err)
 		return fmt.Errorf("cannot delete the task when it is running")
 	}
 }
 
 func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
-	// do nothing when the update is running, report the user cannot update the update when it is running
+	// do nothing when the update is running, report the user cannot update the task when it is running
 	// if the update is in redis priority queue, update it and update it in database
 	data_structure_redis.RemoveJobByID(taskID)
 	taskCache := new(constants.TaskCache)
@@ -244,33 +245,30 @@ func SubscribeToRedisChannel() {
 func executeMatureTasks() error {
 	matureTasks := data_structure_redis.PopJobsForDispatchWithBuffer()
 	for _, task := range matureTasks {
-		go func(task *constants.TaskCache) {
-			fmt.Println("dispatching task: ", task.ID)
-			runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
-				constants.JOBDISPATCHED, "nil")
+		fmt.Println("dispatching task: ", task.ID)
+		runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
+			constants.JOBDISPATCHED, "nil")
 
-			var err error
-			err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
-				runningTaskInfo)
-			if err != nil {
-				log.Printf("insert task %s to database failed: %v", task.ID, err)
-			}
-			// TODO: need to update the lease time, the current duration is 2 seconds
-			err = data_structure_redis.SetLeaseWithID(task.ID, 2*time.Second)
-			if err != nil {
-				log.Printf("set lease for task %s failed: %v", task.ID, err)
-			}
-			// TODO: _ is the workerID, currently not used, will used for routing key in future
-			workerID, status, err := HandoutTasksForExecuting(task)
+		var err error
+		err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
+			runningTaskInfo)
+		if err != nil {
+			return err
+		}
+		// TODO: need to update the lease time, the current duration is 2 seconds
+		err = data_structure_redis.SetLeaseWithID(task.ID, 2*time.Second)
+		if err != nil {
+			return err
+		}
+		// TODO: _ is the workerID, currently not used, will used for routing key in future
+		workerID, status, err := HandoutTasksForExecuting(task)
 
-			log.Printf("dispatch task: %s and executed by %s, found error: %v", task.ID, workerID, err)
+		log.Printf("dispatch task: %s and executing by %s, found error: %v", task.ID, workerID, err)
 
-			err = updateWithDispatchResult(task, status)
-			if err != nil {
-				log.Printf("update task %s with dispatch result failed: %v", task.ID, err)
-			}
-		}(task)
-
+		err = updateWithDispatchResult(task, status)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -312,9 +310,11 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 
 	if err != nil {
 		if r != nil {
-			return r.Id, int(r.Status), fmt.Errorf("could not execute: %v", err)
+			return r.Id, constants.JOBFAILED,
+				fmt.Errorf("could not execute task: %s %v", task.ID, err)
 		}
-		return "", constants.JOBFAILED, fmt.Errorf("could not execute: %v", err)
+		return "", constants.JOBFAILED,
+			fmt.Errorf("could not execute task: %s %v", task.ID, err)
 	}
 	log.Printf("Worker: %s executed task: %s with status %s", r.Id, task.ID, constants.StatusMap[int(r.Status)])
 	return r.Id, int(r.Status), nil
@@ -459,12 +459,11 @@ func handleRecurringJobSucceed(task *constants.TaskCache) error {
 }
 
 func handleJobDispatched(task *constants.TaskCache, jobStatusCode int) error {
-	// designed for future use, with grpc we will get response in sync manner
 	// update task status to 1
 	// happens once the job is dispatched to worker
 	// only update the task_db table in postgresql
-	err := databaseClient.UpdateByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID,
-		map[string]interface{}{"job_status": jobStatusCode})
+	err := databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID,
+		map[string]interface{}{"status": jobStatusCode})
 	if err != nil {
 		return err
 	}
@@ -475,7 +474,7 @@ func handleJobDispatched(task *constants.TaskCache, jobStatusCode int) error {
 func RescheduleFailedJobs(task *constants.TaskCache) error {
 	curRetries := task.RetriesLeft - 1
 	err := databaseClient.UpdateByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID,
-		map[string]interface{}{"retries_left": curRetries})
+		map[string]interface{}{"job_status": constants.JOBRETRYING, "retries_left": curRetries, "worker_id": ""})
 	if err != nil {
 		return err
 	}
@@ -485,7 +484,7 @@ func RescheduleFailedJobs(task *constants.TaskCache) error {
 			"retries_left":            curRetries,
 			"previous_execution_time": task.ExecutionTime,
 			"update_time":             time.Now(),
-			"status":                  constants.JOBFAILED})
+			"status":                  constants.JOBRETRYING})
 	if err != nil {
 		return err
 	}
@@ -520,7 +519,7 @@ func checkOneTimeJobOutdated(executionTime time.Time) bool {
 
 func checkRecurringJobOutdated(executionTime time.Time) bool {
 	diff := time.Now().Sub(executionTime)
-	return diff <= constants.RECURRING_JOB_RETRY_TIME
+	return diff > constants.RECURRING_JOB_RETRY_TIME
 }
 
 // HandleExpiryTasks handles the expiry tasks
@@ -612,4 +611,23 @@ func RegisterUser(userInfo *constants.UserInfo) error {
 func LoginUser(username string, password string) (bool, error) {
 	isValid, err := databaseClient.IsValidCredential(context.Background(), username, password)
 	return isValid, err
+}
+
+func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
+	in *pb.NotifyMessageRequest) (*pb.NotifyMessageResponse, error) {
+	log.Printf("Received Task: %s with Status %s from worker %s",
+		in.TaskId, constants.StatusMap[int(in.Status)], in.WorkerId)
+
+	record, _ := databaseClient.GetTaskByID(ctx, in.TaskId, constants.RUNNING_JOBS_RECORD)
+	runningTask := record.(*constants.RunTimeTask)
+
+	payload := generator.GeneratePayload(runningTask.Payload.Format, runningTask.Payload.Script)
+	taskCache := generator.GenerateTaskCache(runningTask.ID, runningTask.JobType, runningTask.CronExpr,
+		runningTask.ExecutionTime, runningTask.RetriesLeft, payload)
+	err := updateWithDispatchResult(taskCache, int(in.Status))
+	if err != nil {
+		return &pb.NotifyMessageResponse{Success: false}, err
+	}
+
+	return &pb.NotifyMessageResponse{Success: true}, nil
 }

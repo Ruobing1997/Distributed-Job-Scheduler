@@ -53,24 +53,77 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 	var err error
 	err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
 		runningTaskInfo)
-	ctx, cancel := context.WithCancel(context.Background())
+	if err != nil {
+		log.Fatalf("insert task %s into database failed: %v", task.ID, err)
+		return workerID, err
+	}
+	go func() {
+		log.Printf("-------------------------------------------------------")
+		log.Printf("Start Executing Task: %s", task.ID)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		go MonitorLease(ctx, task.ID)
+
+		switch task.Payload.Format {
+		case constants.SHELL:
+			err = executeScript(task.Payload.Script, constants.SHELL)
+		case constants.PYTHON:
+			err = executeScript(task.Payload.Script, constants.PYTHON)
+		case constants.EMAIL:
+			err = executeEmail(task.Payload.Script)
+		}
+		if err != nil {
+			log.Printf("Task: %s failed with error: %v", task.ID, err)
+			runningTaskInfo.JobStatus = constants.JOBFAILED
+			err := databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
+				runningTaskInfo)
+			if err != nil {
+				notifyManagerTaskResult(task.ID, constants.JOBFAILED)
+				return
+			}
+			notifyManagerTaskResult(task.ID, constants.JOBFAILED)
+		} else {
+			runningTaskInfo.JobStatus = constants.JOBSUCCEED
+			err := databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
+				runningTaskInfo)
+			if err != nil {
+				notifyManagerTaskResult(task.ID, constants.JOBFAILED)
+			}
+			notifyManagerTaskResult(task.ID, constants.JOBSUCCEED)
+		}
+	}()
+	return workerID, nil
+}
+
+func notifyManagerTaskResult(taskID string, jobStatus int) {
+	managerService := os.Getenv("MANAGER_SERVICE")
+	if managerService == "" {
+		managerService = MANAGER_SERVICE
+	}
+	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("did not connect: %v", err)
+	}
+	defer conn.Close()
+	client := pb.NewTaskServiceClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), constants.EXECUTE_TASK_GRPC_TIMEOUT)
 	defer cancel()
 
-	go MonitorLease(ctx, task.ID)
+	success, err := client.NotifyTaskStatus(ctx, &pb.NotifyMessageRequest{
+		TaskId:   taskID,
+		WorkerId: workerID,
+		Status:   int32(jobStatus),
+	})
 
-	switch task.Payload.Format {
-	case constants.SHELL:
-		err = executeScript(task.Payload.Script, constants.SHELL)
-	case constants.PYTHON:
-		err = executeScript(task.Payload.Script, constants.PYTHON)
-	case constants.EMAIL:
-		err = executeEmail(task.Payload.Script)
-	}
 	if err != nil {
-		return "nil", fmt.Errorf("error executing task: %s with %v", task.ID, err)
-	} else {
-		return workerID, nil
+		log.Printf("could not notify manager task result: %v", err)
+		return
 	}
+
+	log.Printf("Task: %s notify manager task result: %v", taskID, success.Success)
 }
 
 func MonitorLease(ctx context.Context, taskId string) {

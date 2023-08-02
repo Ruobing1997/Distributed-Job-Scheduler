@@ -7,7 +7,7 @@ import "google/protobuf/duration.proto";
 
 service TaskService {
   rpc ExecuteTask(TaskRequest) returns (TaskResponse);
-  rpc StopTask(TaskStopRequest) returns (TaskResponse);
+  rpc NotifyTaskStatus(NotifyMessageRequest) returns (NotifyMessageResponse);
 }
 
 service LeaseService {
@@ -17,10 +17,6 @@ service LeaseService {
 message Payload {
   int32 format = 1;
   string script = 2;
-}
-
-message TaskStopRequest {
-  string id = 1;
 }
 
 message TaskRequest {
@@ -33,6 +29,16 @@ message TaskRequest {
 message TaskResponse {
   string id = 1;
   int32 status = 2;
+}
+
+message NotifyMessageRequest {
+  string workerId = 1;
+  string taskId = 2;
+  int32 status = 3;
+}
+
+message NotifyMessageResponse {
+  bool success = 1;
 }
 
 message RenewLeaseRequest {

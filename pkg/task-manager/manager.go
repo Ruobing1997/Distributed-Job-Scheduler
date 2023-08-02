@@ -13,6 +13,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"log"
 	"net"
 	"os"
@@ -36,7 +41,7 @@ type ServerImpl struct {
 	pb.UnimplementedLeaseServiceServer
 }
 
-func Init() {
+func InitConnection() {
 	timeTracker = time.Now()
 	logFile, err := os.OpenFile("./logs/managers/manager-"+managerID+".log",
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -61,6 +66,61 @@ func InitManagerGRPC() {
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
+}
+
+func InitLeaderElection() {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		log.Fatalf("error getting k8s config: %v", err)
+	}
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Fatalf("error getting k8s client: %v", err)
+	}
+
+	lock := &resourcelock.LeaseLock{
+		LeaseMeta: metav1.ObjectMeta{
+			Name:      "manager-lock",
+			Namespace: "supernova",
+		},
+		Client: clientset.CoordinationV1(),
+		LockConfig: resourcelock.ResourceLockConfig{
+			Identity: managerID,
+		},
+	}
+
+	leaderelection.RunOrDie(context.Background(), leaderelection.LeaderElectionConfig{
+		Lock:            lock,
+		ReleaseOnCancel: true,
+		LeaseDuration:   60 * time.Second,
+		RenewDeadline:   40 * time.Second,
+		RetryPeriod:     5 * time.Second,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(ctx context.Context) {
+				log.Printf("manager: %v started leading", managerID)
+				// TODO: Add start logic
+				InitConnection()
+				go InitManagerGRPC()
+				Start()
+			},
+			OnStoppedLeading: func() {
+				log.Printf("manager: %v stopped leading", managerID)
+				if err := databaseClient.Close(); err != nil {
+					log.Fatalf("error closing database client: %v", err)
+				}
+
+				if err := redisClient.Close(); err != nil {
+					log.Fatalf("error closing redis client: %v", err)
+				}
+			}, OnNewLeader: func(identity string) {
+				log.Printf("new leader elected: %v", identity)
+				InitConnection()
+				go InitManagerGRPC()
+				Start()
+			},
+		},
+	})
+
 }
 
 func Start() {

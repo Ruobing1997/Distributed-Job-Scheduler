@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/api"
-	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch"
 	task_manager "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-manager"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
@@ -32,7 +31,7 @@ var startCmd = &cobra.Command{
 		fmt.Println("MorFun_SuperNova Manager Init")
 		task_manager.Start()
 		fmt.Println("MorFun_SuperNova Manager Start")
-		go dispatch.InitManagerGRPC()
+		go task_manager.InitManagerGRPC()
 		time.Sleep(2 * time.Second)
 		fmt.Println("***********************************************************")
 		fmt.Println("***MorFun_SuperNova Manager All set, you are good to go***")

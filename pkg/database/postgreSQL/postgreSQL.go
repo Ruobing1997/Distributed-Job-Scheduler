@@ -64,6 +64,7 @@ func (c *Client) InsertTask(ctx context.Context, table string, record databaseha
 }
 
 func (c *Client) GetTaskByID(ctx context.Context, table string, id string, args ...interface{}) (databasehandler.DataRecord, error) {
+	log.Printf("Database Received GetTaskByID request for table %s and id %s", table, id)
 	switch table {
 	case constants.TASKS_FULL_RECORD:
 		query := `SELECT * FROM job_full_info WHERE id = $1`

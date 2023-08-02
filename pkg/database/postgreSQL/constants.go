@@ -32,13 +32,7 @@ const (
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (id)
 		DO UPDATE SET 
-			execution_time = EXCLUDED.execution_time,
-			job_type = EXCLUDED.job_type,
 			job_status = EXCLUDED.job_status,
-			execute_format = EXCLUDED.execute_format,
-			execute_script = EXCLUDED.execute_script,
-			retries_left = EXCLUDED.retries_left,
-			cron_expression = EXCLUDED.cron_expression,
 			worker_id = EXCLUDED.worker_id
 	`
 )

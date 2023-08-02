@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/database/postgreSQL"
-	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/middleware"
 	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
@@ -12,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"time"
@@ -38,15 +38,32 @@ func Init() {
 	log.SetOutput(multiWrite)
 
 	log.Printf("Task Executor and its grpc server are initialized")
-	middleware.SetExecuteTaskFunc(ExecuteTask)
-	log.Printf("ExecuteTask function set up done")
+
 	databaseClient = postgreSQL.NewpostgreSQLClient()
 	log.Printf("database set up done")
 }
 
+type ServerImpl struct {
+	pb.UnimplementedTaskServiceServer
+	pb.UnimplementedLeaseServiceServer
+}
+
+func InitWorkerGRPC() {
+	lis, err := net.Listen("tcp", ":50051")
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	s := grpc.NewServer()
+	pb.RegisterTaskServiceServer(s, &ServerImpl{})
+	pb.RegisterLeaseServiceServer(s, &ServerImpl{})
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
+}
+
 func ExecuteTask(task *constants.TaskCache) (string, error) {
 	log.Printf("-------------------------------------------------------")
-	log.Printf("Received update with payload: format: %d, content: %s",
+	log.Printf("Received task with payload: format: %d, content: %s",
 		task.Payload.Format, task.Payload.Script)
 	runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
 		constants.JOBRUNNING, workerID)
@@ -219,4 +236,20 @@ func executeEmail(emailInfo string) error {
 	log.Printf("Sending email with info: %s", emailInfo)
 
 	return fmt.Errorf("email not implemented yet")
+}
+
+func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.TaskResponse, error) {
+	payload := generator.GeneratePayload(int(in.Payload.Format), in.Payload.Script)
+	task := &constants.TaskCache{
+		ID:            in.Id,
+		Payload:       payload,
+		ExecutionTime: in.ExecutionTime.AsTime(),
+		RetriesLeft:   int(in.MaxRetryCount),
+	}
+
+	workerID, err := ExecuteTask(task)
+	if err != nil {
+		return &pb.TaskResponse{Id: workerID, Status: constants.JOBFAILED}, err
+	}
+	return &pb.TaskResponse{Id: workerID, Status: constants.JOBDISPATCHED}, nil
 }

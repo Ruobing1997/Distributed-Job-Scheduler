@@ -103,7 +103,7 @@ var resultMap = map[int]string{
 	2: "Failed",
 }
 
-var typeMap = map[int]string{
+var TypeMap = map[int]string{
 	0: "OneTime",
 	1: "Recurring",
 }

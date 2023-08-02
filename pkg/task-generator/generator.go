@@ -80,6 +80,7 @@ func GeneratePayload(jobType int, script string) *constants.Payload {
 
 func GenerateRunTimeTaskThroughTaskCache(task *constants.TaskCache,
 	jobStatus int, workerID string) *constants.RunTimeTask {
+	log.Printf("GenerateRunTimeTaskThroughTaskCache: %v", task)
 	runningTaskInfo := &constants.RunTimeTask{
 		ID:            task.ID,
 		ExecutionTime: task.ExecutionTime,

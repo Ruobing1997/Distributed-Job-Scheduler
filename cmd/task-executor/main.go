@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch"
 	task_executor "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-executor"
 	"github.com/spf13/cobra"
 	"log"
@@ -27,7 +26,7 @@ var startCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		task_executor.Init()
 		fmt.Println("MorFun_SuperNova Worker Init")
-		go dispatch.InitWorkerGRPC()
+		go task_executor.InitWorkerGRPC()
 		time.Sleep(2 * time.Second)
 		fmt.Println("****************************************************")
 		fmt.Println("**Worker All set, Worker is ready to execute tasks**")

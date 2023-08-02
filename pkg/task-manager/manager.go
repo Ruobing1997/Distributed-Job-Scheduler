@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"log"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -47,6 +48,19 @@ func Init() {
 	// TODO: make the user to choose database type
 	databaseClient = postgreSQL.NewpostgreSQLClient()
 	redisClient = data_structure_redis.Init()
+}
+
+func InitManagerGRPC() {
+	lis, err := net.Listen("tcp", ":50051")
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	s := grpc.NewServer()
+	pb.RegisterTaskServiceServer(s, &ServerImpl{})
+	pb.RegisterLeaseServiceServer(s, &ServerImpl{})
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
 }
 
 func Start() {
@@ -102,8 +116,8 @@ func addJobToRedis(taskDB *constants.TaskDB) {
 		taskDB.Retries,
 		taskDB.Payload)
 	data_structure_redis.AddJob(taskCache)
-	log.Printf("Task %s added to priority queue. Now the Q length is: %d",
-		taskCache.ID, data_structure_redis.GetQLength())
+	log.Printf("Task %v added to priority queue. Now the Q length is: %d",
+		taskCache, data_structure_redis.GetQLength())
 }
 
 // HandleNewTasks handles new tasks from API,  这里应该是入口函数。主要做创建任务的逻辑
@@ -245,7 +259,7 @@ func SubscribeToRedisChannel() {
 func executeMatureTasks() error {
 	matureTasks := data_structure_redis.PopJobsForDispatchWithBuffer()
 	for _, task := range matureTasks {
-		fmt.Println("dispatching task: ", task.ID)
+		log.Printf("dispatching task: %s with job type %s", task.ID, constants.TypeMap[task.JobType])
 		runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
 			constants.JOBDISPATCHED, "nil")
 
@@ -348,6 +362,8 @@ func MonitorHeadNode() {
 }
 
 func updateWithDispatchResult(task *constants.TaskCache, jobStatusCode int) error {
+	log.Printf("------------------------")
+	log.Printf("update task: %s with status: %s", task.ID, constants.StatusMap[jobStatusCode])
 	switch jobStatusCode {
 	case dispatch.JobDispatched:
 		return handleJobDispatched(task, jobStatusCode)
@@ -402,6 +418,9 @@ func handleCompletelyFailedJob(task *constants.TaskCache, jobStatusCode int) err
 }
 
 func handleJobSucceed(task *constants.TaskCache) error {
+	log.Printf("---------------------------------")
+	log.Printf("handle job succeed for job: %s for job type: %s", task.ID,
+		constants.TypeMap[task.JobType])
 	// the task should be deleted from ExecutionRecord
 	err := databaseClient.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID)
 	if err != nil {
@@ -536,12 +555,15 @@ func HandleExpiryTasks(msg *redis.Message) {
 }
 
 func HandleUnRenewLeaseJobThroughDB(id string) error {
+	log.Printf("-----------------------------")
+	log.Printf("Handle un renew lease job: %s", id)
 	// check job type (through runtime db table)
 	// if job type is one time, directly return fail
 	// if job type is recur, check retry times
 	// if > 0, reenter queue, update redis, db; otherwise return fail
 	record, err := databaseClient.GetTaskByID(context.Background(), constants.RUNNING_JOBS_RECORD, id)
 	if err != nil {
+		log.Printf("Get task by id failed when handle renew lease jobs: %v", err)
 		return err
 	}
 	runTimeTask := record.(*constants.RunTimeTask)
@@ -618,16 +640,36 @@ func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 	log.Printf("Received Task: %s with Status %s from worker %s",
 		in.TaskId, constants.StatusMap[int(in.Status)], in.WorkerId)
 
-	record, _ := databaseClient.GetTaskByID(ctx, in.TaskId, constants.RUNNING_JOBS_RECORD)
+	record, err := databaseClient.GetTaskByID(ctx, constants.RUNNING_JOBS_RECORD, in.TaskId)
+	if err != nil {
+		return &pb.NotifyMessageResponse{Success: false},
+			fmt.Errorf("failed to get task by id from DB: %v", err)
+	}
+
 	runningTask := record.(*constants.RunTimeTask)
 
+	log.Printf("Running Task: %v", runningTask)
+
 	payload := generator.GeneratePayload(runningTask.Payload.Format, runningTask.Payload.Script)
-	taskCache := generator.GenerateTaskCache(runningTask.ID, runningTask.JobType, runningTask.CronExpr,
+	taskCache := generator.GenerateTaskCache(
+		runningTask.ID, runningTask.JobType, runningTask.CronExpr,
 		runningTask.ExecutionTime, runningTask.RetriesLeft, payload)
-	err := updateWithDispatchResult(taskCache, int(in.Status))
+
+	err = updateWithDispatchResult(taskCache, int(in.Status))
 	if err != nil {
-		return &pb.NotifyMessageResponse{Success: false}, err
+		return &pb.NotifyMessageResponse{Success: false},
+			fmt.Errorf("failed to get response back to worker: %v", err)
 	}
 
 	return &pb.NotifyMessageResponse{Success: true}, nil
+}
+
+func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (*pb.RenewLeaseResponse, error) {
+	// worker should ask for a new lease before the current lease expires
+	err := data_structure_redis.SetLeaseWithID(in.Id, in.LeaseDuration.AsDuration())
+	if err != nil {
+		return &pb.RenewLeaseResponse{Success: false},
+			fmt.Errorf("lease for update %s has expired", in.Id)
+	}
+	return &pb.RenewLeaseResponse{Success: true}, nil
 }

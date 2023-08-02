@@ -6,7 +6,7 @@ metadata:
     app: worker
   namespace: supernova
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: worker
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: morefun-supernova-worker:1.1
+          image: morefun-supernova-worker:2.0
           args:
             - /app/executor
             - start

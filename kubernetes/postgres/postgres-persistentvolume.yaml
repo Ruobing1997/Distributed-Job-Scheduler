@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv1
+  namespace: supernova
+spec:
+  storageClassName: "local-storage"
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /mnt/c/Users/robingowang/Desktop/postgres/data
+  

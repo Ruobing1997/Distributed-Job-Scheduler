@@ -6,7 +6,7 @@ metadata:
     app: api-server
   namespace: supernova
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: api-server
@@ -17,6 +17,6 @@ spec:
     spec:
       containers:
         - name: api-server
-          image: morefun-supernova-api:1.1
+          image: morefun-supernova-api:2.0
           ports:
             - containerPort: 8080

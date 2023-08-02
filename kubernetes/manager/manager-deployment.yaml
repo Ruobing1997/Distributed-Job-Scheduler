@@ -6,7 +6,7 @@ metadata:
     app: manager
   namespace: supernova
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: manager
@@ -18,7 +18,7 @@ spec:
       containers:
         - args:
             - /usr/wait-for-it.sh
-            - postgresql:5432
+            - postgres:5432
             - --
             - /usr/wait-for-it.sh
             - redis:6379
@@ -29,7 +29,7 @@ spec:
             - /app/manager
             - start
           name: manager
-          image: morefun-supernova-manager:1.1
+          image: morefun-supernova-manager:2.0
           env:
             - name: REDIS_ADDR
               value: "redis:6379"

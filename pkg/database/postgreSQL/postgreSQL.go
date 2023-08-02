@@ -21,7 +21,10 @@ type Client struct {
 
 // NewMySQLClient initializes the connection to MySQL database.
 func NewpostgreSQLClient() *Client {
-	db, err := sql.Open(os.Getenv("POSTGRES"), os.Getenv("POSTGRES_URL"))
+	postgresURL := os.Getenv("POSTGRES_URL")
+	postgresPassWord := os.Getenv("POSTGRES_PASSWORD")
+	fullPostgresURL := postgresURL + " password=" + postgresPassWord
+	db, err := sql.Open(os.Getenv("POSTGRES"), fullPostgresURL)
 	if err != nil {
 		log.Fatalf("Error opening database: %s", err.Error())
 	}

@@ -49,7 +49,7 @@ spec:
                   name: postgres-secret
                   key: postgres-password
             - name: POSTGRES_URL
-              value: "host=postgres port=5432 user=postgres password=${POSTGRES_PASSWORD} dbname=postgres sslmode=disable"
+              value: "host=postgres port=5432 user=postgres dbname=postgres sslmode=disable"
           ports:
             - containerPort: 9090
             - containerPort: 50051

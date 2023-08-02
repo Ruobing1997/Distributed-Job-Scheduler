@@ -34,9 +34,9 @@ var startCmd = &cobra.Command{
 		fmt.Println("MorFun_SuperNova Manager Start")
 		go dispatch.InitManagerGRPC()
 		time.Sleep(2 * time.Second)
-		fmt.Println("****************************************************")
-		log.Printf("**MorFun_SuperNova Manager All set, you are good to go**")
-		fmt.Println("****************************************************")
+		fmt.Println("***********************************************************")
+		fmt.Println("***MorFun_SuperNova Manager All set, you are good to go***")
+		fmt.Println("***********************************************************")
 		r := gin.Default()
 
 		r.LoadHTMLGlob("./app/frontend/*/*.html")

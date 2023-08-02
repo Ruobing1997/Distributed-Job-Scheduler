@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: supernova
+data:
+  redis.conf: |
+    notify-keyspace-events Ex
+    save ""
+    appendonly no
+  

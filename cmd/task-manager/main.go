@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/api"
 	task_manager "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-manager"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
 	"log"
@@ -37,7 +38,7 @@ var startCmd = &cobra.Command{
 		fmt.Println("***MorFun_SuperNova Manager All set, you are good to go***")
 		fmt.Println("***********************************************************")
 		r := gin.Default()
-
+		r.Use(cors.Default())
 		r.LoadHTMLGlob("./app/frontend/*/*.html")
 
 		r.POST("/api/generate", func(c *gin.Context) {

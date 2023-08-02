@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app: worker
+  namespace: supernova
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: morefun-supernova-worker:1.1
+          args:
+            - /app/executor
+            - start
+          env:
+            - name: MANAGER_SERVICE
+              value: "manager"
+            - name: POSTGRES
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: postgres-password
+            - name: POSTGRES_URL
+              value: "host=postgres port=5432 user=postgres password=${POSTGRES_PASSWORD} dbname=postgres sslmode=disable"
+          ports:
+            - containerPort: 50051

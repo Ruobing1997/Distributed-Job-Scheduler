@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manager
+  labels:
+    app: manager
+  namespace: supernova
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: manager
+  template:
+    metadata:
+      labels:
+        app: manager
+    spec:
+      containers:
+        - args:
+            - /usr/wait-for-it.sh
+            - postgresql:5432
+            - --
+            - /usr/wait-for-it.sh
+            - redis:6379
+            - --
+            - /usr/wait-for-it.sh
+            - worker:50051
+            - --
+            - /app/manager
+            - start
+          name: manager
+          image: morefun-supernova-manager:1.1
+          env:
+            - name: REDIS_ADDR
+              value: "redis:6379"
+            - name: REDIS_PASSWORD
+              value: ""
+            - name: REDIS_DB
+              value: "0"
+            - name: WORKER_SERVICE
+              value: "worker"
+            - name: MANAGER_SERVICE
+              value: "manager"
+            - name: POSTGRES
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: postgres-password
+            - name: POSTGRES_URL
+              value: "host=postgres port=5432 user=postgres password=${POSTGRES_PASSWORD} dbname=postgres sslmode=disable"
+          ports:
+            - containerPort: 9090
+            - containerPort: 50051

@@ -86,6 +86,41 @@
                 console.error("Delete task error: ", error)
             })
         }
+
+        window.onload = function () {
+            const statusMap = {
+                0: "Pending",
+                1: "Running",
+                2: "Completed",
+                3: "Failed",
+                4: "ReEntered",
+                5: "Retrying",
+                6: "Dispatched",
+            }
+            const typeMap = {
+                0: "OneTime",
+                1: "Recurring",
+            }
+            const formatMap = {
+                0 : "Shell",
+                1 : "Python"
+            }
+
+            const statusElems = document.querySelectorAll(".status");
+            statusElems.forEach(elem => {
+                elem.textContent = statusMap[elem.textContent];
+            });
+
+            const typeElems = document.querySelectorAll(".type");
+            typeElems.forEach(elem => {
+                elem.textContent = typeMap[elem.textContent];
+            });
+
+            const formatElems = document.querySelectorAll(".format");
+            formatElems.forEach(elem => {
+                elem.textContent = formatMap[elem.textContent];
+            });
+        }
     </script>
 </head>
 <body>
@@ -99,7 +134,6 @@
         <th>Cron Expression</th>
         <th>Payload Format</th>
         <th>Payload Script</th>
-        <th>Callback URL</th>
         <th>Status</th>
         <th>Execution Time</th>
         <th>Previous Execution Time</th>
@@ -115,12 +149,11 @@
     <tr>
         <td><a href="task/{{.ID}}">{{.ID}}</a></td>
         <td>{{.JobName}}</td>
-        <td>{{.JobType}}</td>
+        <td class="type">{{.JobType}}</td>
         <td>{{.CronExpr}}</td>
-        <td>{{.Payload.Format}}</td>
+        <td class="format">{{.Payload.Format}}</td>
         <td>{{.Payload.Script}}</td>
-        <td>{{.CallbackURL}}</td>
-        <td>{{.Status}}</td>
+        <td class="status">{{.Status}}</td>
         <td>{{.ExecutionTime}}</td>
         <td>{{.PreviousExecutionTime}}</td>
         <td>{{.CreateTime}}</td>

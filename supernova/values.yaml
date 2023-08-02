@@ -1,0 +1,11 @@
+apiServer:
+  replicaCount: 3
+  image:
+    repository: morefun-supernova-api
+    tag: 1.1
+    pullPolicy: IfNotPresent
+  service:
+    type: LoadBalancer
+    port: 8080
+  command:
+    "/app/api"

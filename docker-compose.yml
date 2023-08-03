@@ -2,14 +2,14 @@ version: '3'
 
 services:
   api-server:
-    image: morefun-supernova-api:2.0
+    image: morefun-supernova-api:3.0
     command: ["/app/api"]
     depends_on:
       - manager
     ports:
       - "8080:8080"
   manager:
-    image: morefun-supernova-manager:2.0
+    image: morefun-supernova-manager:3.0
     command: ["/usr/wait-for-it.sh", "postgresql:5432", "--", "/usr/wait-for-it.sh", "redis:6379", "--", "/usr/wait-for-it.sh", "worker:50051", "--", "/app/manager", "start"]
     depends_on:
       - redis
@@ -28,7 +28,7 @@ services:
 
 
   worker:
-    image: morefun-supernova-worker:2.0
+    image: morefun-supernova-worker:3.0
     command: ["/app/executor", "start"]
     environment:
       MANAGER_SERVICE: "manager"

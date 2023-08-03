@@ -19,7 +19,7 @@ CREATE INDEX IF NOT EXISTS task_db_create_time_brin_idx ON job_full_info USING B
 
 CREATE TABLE IF NOT EXISTS running_tasks_record
 (
-    id           VARCHAR(255) PRIMARY KEY,
+    id           VARCHAR(255),
     execution_time TIMESTAMP NOT NULL,
     job_type     int NOT NULL,
     job_status   int NOT NULL,
@@ -27,8 +27,17 @@ CREATE TABLE IF NOT EXISTS running_tasks_record
     execute_script VARCHAR(255),
     retries_left int NOT NULL,
     cron_expression VARCHAR(255),
-    worker_id VARCHAR(255)
+    worker_id VARCHAR(255),
+    execution_id varchar(255) PRIMARY KEY
     );
 
 CREATE INDEX IF NOT EXISTS execution_record_job_status_idx ON running_tasks_record (job_status);
 CREATE INDEX IF NOT EXISTS execution_record_worker_id_idx ON running_tasks_record (worker_id);
+
+CREATE TABLE IF NOT EXISTS taskid_execid_mapping
+(
+    task_id VARCHAR(255) NOT NULL,
+    execution_id VARCHAR(255) NOT NULL PRIMARY KEY
+);
+
+CREATE INDEX IF NOT EXISTS taskid_execid_mapping_task_id_idx ON taskid_execid_mapping (task_id);

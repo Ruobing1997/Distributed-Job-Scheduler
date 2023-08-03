@@ -16,7 +16,6 @@ type DatabaseClient interface {
 	UpdateByID(ctx context.Context, table string, id string, args map[string]interface{}) error
 	DeleteByID(ctx context.Context, table string, id string) error
 	GetTasksInInterval(startTime time.Time, endTime time.Time, timeTracker time.Time) ([]*constants.TaskDB, error)
-	InsertUser(ctx context.Context, record DataRecord) error
-	IsValidCredential(ctx context.Context, username string, password string) (bool, error)
 	Close() error
+	CountRunningTasks(ctx context.Context, idValue string) (int, error)
 }

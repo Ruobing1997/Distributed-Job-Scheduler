@@ -1,7 +1,6 @@
 package main
 
 import (
-	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/api"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"net/http/httputil"
@@ -33,13 +32,6 @@ func main() {
 	r.Static("/imgs", "./app/frontend/imgs")
 
 	r.Any("/api/*any", setupReverseProxy("http://manager:9090"))
-
-	r.POST("/register", func(c *gin.Context) {
-		api.RegisterUserHandler(c)
-	})
-	r.POST("/login", func(c *gin.Context) {
-		api.LoginUserHandler(c)
-	})
 
 	r.Run() // listen and serve on 0.0.0.0:8080
 }

@@ -28,11 +28,20 @@ const (
 	`
 	InsertOrUpdateRunningTask = `
 		INSERT INTO running_tasks_record 
-			(id, execution_time, job_type, job_status, execute_format, execute_script, retries_left, cron_expression, worker_id) 
+			(id, execution_time, job_type, job_status, execute_format, execute_script, 
+			 retries_left, cron_expression, worker_id, execution_id) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (id)
+		ON CONFLICT (execution_id)
 		DO UPDATE SET 
 			job_status = EXCLUDED.job_status,
 			worker_id = EXCLUDED.worker_id
+	`
+
+	InsertTaskIDExecIDMap = `
+		INSERT INTO taskid_execid_mapping (task_id, execution_id) VALUES ($1, $2)
+	`
+
+	CountRunningTasks = `
+		SELECT COUNT(*) FROM running_tasks_record WHERE id = $1 AND job_status = 1
 	`
 )

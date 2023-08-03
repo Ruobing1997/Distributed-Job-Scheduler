@@ -21,9 +21,10 @@ message Payload {
 
 message TaskRequest {
   string id = 1;
-  Payload payload = 2;
-  google.protobuf.Timestamp execution_time = 3;
-  int32 max_retry_count = 4;
+  string execId = 2;
+  Payload payload = 3;
+  google.protobuf.Timestamp execution_time = 4;
+  int32 max_retry_count = 5;
 }
 
 message TaskResponse {
@@ -34,7 +35,8 @@ message TaskResponse {
 message NotifyMessageRequest {
   string workerId = 1;
   string taskId = 2;
-  int32 status = 3;
+  string execId = 3;
+  int32 status = 4;
 }
 
 message NotifyMessageResponse {
@@ -43,7 +45,8 @@ message NotifyMessageResponse {
 
 message RenewLeaseRequest {
   string id = 1;
-  google.protobuf.Duration lease_duration = 2;
+  string execId = 2;
+  google.protobuf.Duration lease_duration = 3;
 }
 
 message RenewLeaseResponse {

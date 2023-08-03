@@ -58,10 +58,17 @@ func (c *Client) InsertTask(ctx context.Context, table string, record databaseha
 			runTimeTask.Payload.Script,
 			runTimeTask.RetriesLeft,
 			runTimeTask.CronExpr,
-			runTimeTask.WorkerID)
+			runTimeTask.WorkerID,
+			runTimeTask.ExecutionID)
+	case constants.TASKID_TO_EXECID:
+		idMap, ok := record.(*constants.TaskIDExecIDMap)
+		if !ok {
+			return errors.New("invalid data record")
+		}
+		_, err = c.db.ExecContext(ctx, InsertTaskIDExecIDMap, idMap.TaskID, idMap.ExecutionID)
 	}
 	if err != nil {
-		return fmt.Errorf("error inserting/updating task: %s", err.Error())
+		return fmt.Errorf("error inserting/updating task: %s", err)
 	}
 	return nil
 }
@@ -86,7 +93,7 @@ func (c *Client) GetTaskByID(ctx context.Context, table string, id string, args 
 		}
 		return &taskDB, nil
 	case constants.RUNNING_JOBS_RECORD:
-		query := `SELECT * FROM running_tasks_record WHERE id = $1`
+		query := `SELECT * FROM running_tasks_record WHERE id = $1 OR execution_id = $1`
 		var runtimeJobInfo constants.RunTimeTask
 		var format int
 		var script string
@@ -99,7 +106,8 @@ func (c *Client) GetTaskByID(ctx context.Context, table string, id string, args 
 			&script,
 			&runtimeJobInfo.RetriesLeft,
 			&runtimeJobInfo.CronExpr,
-			&runtimeJobInfo.WorkerID)
+			&runtimeJobInfo.WorkerID,
+			&runtimeJobInfo.ExecutionID)
 		if err != nil {
 			return nil, fmt.Errorf("error getting task by id: %s", err.Error())
 		}
@@ -176,27 +184,26 @@ func (c *Client) UpdateByID(ctx context.Context, table string, id string,
 	return nil
 }
 
-func (c *Client) InsertUser(ctx context.Context, record databasehandler.DataRecord) error {
-	user, ok := record.(*constants.UserInfo)
-	if !ok {
-		return errors.New("invalid data record")
+func (c *Client) UpdateByExecutionID(ctx context.Context, table string, execID string,
+	args map[string]interface{}) error {
+	var setValues []string
+	var values []interface{}
+	i := 1
+	for k, v := range args {
+		setValues = append(setValues, fmt.Sprintf("%s = $%d", k, i))
+		values = append(values, v)
+		i++
 	}
-	query := `INSERT INTO users (username, password, role) VALUES ($1, $2, $3)`
-	_, err := c.db.ExecContext(ctx, query, user.Username, user.Password, user.Role)
+
+	query := `update ` + table + ` SET ` + strings.Join(setValues, ", ") +
+		` WHERE execution_id = $` + strconv.Itoa(i)
+	values = append(values, execID)
+	_, err := c.db.ExecContext(ctx, query, values...)
 	if err != nil {
-		return err
+		return fmt.Errorf("error updating execution record: %s", err.Error())
 	}
 	return nil
-}
 
-func (c *Client) IsValidCredential(ctx context.Context, username string, password string) (bool, error) {
-	query := `SELECT * FROM users WHERE username = $1 AND password = $2`
-	var user constants.UserInfo
-	err := c.db.QueryRowContext(ctx, query, username, password).Scan(&user.Username, &user.Password, &user.Role)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func (c *Client) GetAllTasks() ([]*constants.TaskDB, error) {
@@ -241,7 +248,7 @@ func (c *Client) GetAllRunningTasks() ([]*constants.RunTimeTask, error) {
 		var script string
 		err := rows.Scan(&runTimeTask.ID, &runTimeTask.ExecutionTime, &runTimeTask.JobType,
 			&runTimeTask.JobStatus, &format, &script, &runTimeTask.RetriesLeft,
-			&runTimeTask.CronExpr, &runTimeTask.WorkerID)
+			&runTimeTask.CronExpr, &runTimeTask.WorkerID, &runTimeTask.ExecutionID)
 		if err != nil {
 			return nil, err
 		}
@@ -255,4 +262,13 @@ func (c *Client) GetAllRunningTasks() ([]*constants.RunTimeTask, error) {
 		return nil, err
 	}
 	return runTimeTasks, nil
+}
+
+func (c *Client) CountRunningTasks(ctx context.Context, idValue string) (int, error) {
+	var count int
+	err := c.db.QueryRow(CountRunningTasks, idValue).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }

@@ -2,7 +2,6 @@ package api
 
 import (
 	task_manager "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-manager"
-	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
@@ -81,6 +80,7 @@ func UpdateTaskHandler(c *gin.Context) {
 		"execute_format": format,
 		"execute_script": script,
 		"update_time":    time.Now(),
+		"create_time":    time.Now(),
 		"retries":        retries}
 	err := task_manager.HandleUpdateTasks(
 		taskID, updateVarsMap)
@@ -101,54 +101,6 @@ func GetTaskHandler(c *gin.Context) {
 		return
 	}
 	c.HTML(http.StatusOK, "detail_index.html", task)
-}
-
-func RegisterUserHandler(c *gin.Context) {
-	var userRequest UserRequest
-	if err := c.ShouldBindJSON(&userRequest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	username := userRequest.Username
-	password := userRequest.Password
-
-	var currentUser *constants.UserInfo
-	currentUser.Username = username
-	currentUser.Password = password
-	if currentUser.Username == "admin" &&
-		currentUser.Password == "admin" {
-		currentUser.Role = 1
-	} else {
-		currentUser.Role = 0
-	}
-	err := task_manager.RegisterUser(currentUser)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "Successfully registered user"})
-}
-
-func LoginUserHandler(c *gin.Context) {
-	var userRequest UserRequest
-	if err := c.ShouldBindJSON(&userRequest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	username := userRequest.Username
-	password := userRequest.Password
-	isValid, err := task_manager.LoginUser(username, password)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if isValid {
-		c.JSON(http.StatusOK, gin.H{"status": "Successfully logged in"})
-	} else {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid username or password"})
-	}
 }
 
 func DashboardHandler(c *gin.Context) {

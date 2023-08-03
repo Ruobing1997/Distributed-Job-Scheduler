@@ -65,13 +65,16 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 	log.Printf("-------------------------------------------------------")
 	log.Printf("Received task with payload: format: %d, content: %s",
 		task.Payload.Format, task.Payload.Script)
-	runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
-		constants.JOBRUNNING, workerID)
 	var err error
-	err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
-		runningTaskInfo)
+	err = databaseClient.UpdateByExecutionID(context.Background(),
+		constants.RUNNING_JOBS_RECORD, task.ExecutionID,
+		map[string]interface{}{
+			"job_status": constants.JOBRUNNING,
+			"worker_id":  workerID,
+		})
 	if err != nil {
-		log.Fatalf("insert task %s into database failed: %v", task.ID, err)
+		log.Fatalf("insert task: %s with Execution ID: %s "+
+			"into database failed: %v", task.ID, task.ExecutionID, err)
 		return workerID, err
 	}
 	go func() {
@@ -81,7 +84,7 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		go MonitorLease(ctx, task.ID)
+		go MonitorLease(ctx, task.ID, task.ExecutionID)
 
 		switch task.Payload.Format {
 		case constants.SHELL:
@@ -93,28 +96,31 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 		}
 		if err != nil {
 			log.Printf("Task: %s failed with error: %v", task.ID, err)
-			runningTaskInfo.JobStatus = constants.JOBFAILED
-			err := databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
-				runningTaskInfo)
+			err = databaseClient.UpdateByExecutionID(context.Background(),
+				constants.RUNNING_JOBS_RECORD, task.ExecutionID,
+				map[string]interface{}{"job_status": constants.JOBFAILED})
 			if err != nil {
-				notifyManagerTaskResult(task.ID, constants.JOBFAILED)
+				notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBFAILED)
 				return
 			}
-			notifyManagerTaskResult(task.ID, constants.JOBFAILED)
+			notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBFAILED)
 		} else {
-			runningTaskInfo.JobStatus = constants.JOBSUCCEED
-			err := databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
-				runningTaskInfo)
+			err = databaseClient.UpdateByExecutionID(context.Background(),
+				constants.RUNNING_JOBS_RECORD, task.ExecutionID,
+				map[string]interface{}{"job_status": constants.JOBSUCCEED})
 			if err != nil {
-				notifyManagerTaskResult(task.ID, constants.JOBFAILED)
+				notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBFAILED)
+				log.Fatalf("update task execid: %s failed: %v",
+					task.ExecutionID, err)
+			} else {
+				notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBSUCCEED)
 			}
-			notifyManagerTaskResult(task.ID, constants.JOBSUCCEED)
 		}
 	}()
 	return workerID, nil
 }
 
-func notifyManagerTaskResult(taskID string, jobStatus int) {
+func notifyManagerTaskResult(taskID string, execID string, jobStatus int) {
 	managerService := os.Getenv("MANAGER_SERVICE")
 	if managerService == "" {
 		managerService = MANAGER_SERVICE
@@ -132,6 +138,7 @@ func notifyManagerTaskResult(taskID string, jobStatus int) {
 	success, err := client.NotifyTaskStatus(ctx, &pb.NotifyMessageRequest{
 		TaskId:   taskID,
 		WorkerId: workerID,
+		ExecId:   execID,
 		Status:   int32(jobStatus),
 	})
 
@@ -143,9 +150,9 @@ func notifyManagerTaskResult(taskID string, jobStatus int) {
 	log.Printf("Task: %s notify manager task result: %v", taskID, success.Success)
 }
 
-func MonitorLease(ctx context.Context, taskId string) {
+func MonitorLease(ctx context.Context, taskId string, execID string) {
 	log.Printf("-------------------------------------------------------")
-	log.Printf("Worker: %s is monitoring lease for update: %s", workerID, taskId)
+	log.Printf("execID: %s is monitoring lease for update: %s", execID, taskId)
 	ticker := time.NewTicker(constants.LEASE_RENEW_INTERVAL)
 	defer ticker.Stop()
 
@@ -154,17 +161,17 @@ func MonitorLease(ctx context.Context, taskId string) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			log.Printf("Worker: %s is renewing lease for update: %s", workerID, taskId)
-			err := WorkerRenewLease(taskId, constants.LEASE_DURATION)
+			log.Printf("execID: %s is renewing lease for update: %s", execID, taskId)
+			err := WorkerRenewLease(taskId, execID, constants.LEASE_DURATION)
 			if err != nil {
-				log.Printf("failed to renew lease for update %s: %v", taskId, err)
+				log.Printf("failed to renew lease for update execID %s: %v", execID, err)
 			}
 		}
 	}
 
 }
 
-func RenewLease(taskID string, duration time.Duration) (bool, error) {
+func RenewLease(taskID string, execID string, duration time.Duration) (bool, error) {
 	managerService := os.Getenv("MANAGER_SERVICE")
 	if managerService == "" {
 		managerService = MANAGER_SERVICE
@@ -181,6 +188,7 @@ func RenewLease(taskID string, duration time.Duration) (bool, error) {
 
 	success, err := client.RenewLease(ctx, &pb.RenewLeaseRequest{
 		Id:            taskID,
+		ExecId:        execID,
 		LeaseDuration: durationpb.New(duration),
 	})
 
@@ -191,8 +199,8 @@ func RenewLease(taskID string, duration time.Duration) (bool, error) {
 	return success.Success, nil
 }
 
-func WorkerRenewLease(taskID string, duration time.Duration) error {
-	success, err := RenewLease(taskID, duration)
+func WorkerRenewLease(taskID string, execID string, duration time.Duration) error {
+	success, err := RenewLease(taskID, execID, duration)
 	if err != nil {
 		return err
 	}
@@ -232,7 +240,8 @@ func executeScript(scriptContent string, scriptType int) error {
 func executeEmail(emailInfo string) error {
 	// Here you can implement the logic to send an email based on the emailInfo
 	// For example, you can use a package like "net/smtp" to send emails in Go
-	// For simplicity, I'm just printing the emailInfo
+	// For simplicity, I'm just printing the emailInfo,
+	// and this can be used to test bad cases
 	log.Printf("Sending email with info: %s", emailInfo)
 
 	return fmt.Errorf("email not implemented yet")
@@ -245,6 +254,7 @@ func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.T
 		Payload:       payload,
 		ExecutionTime: in.ExecutionTime.AsTime(),
 		RetriesLeft:   int(in.MaxRetryCount),
+		ExecutionID:   in.ExecId,
 	}
 
 	workerID, err := ExecuteTask(task)

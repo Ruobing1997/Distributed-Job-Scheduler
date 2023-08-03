@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+// TODO: （急迫）重改后的逻辑不需要添加这么多了，
+// 这些信息应该是在任务执行表中，需要修改这个struct以及对应的db结构
 type TaskDB struct {
 	ID                    string
 	JobName               string
@@ -40,6 +42,7 @@ type TaskCache struct {
 	Payload       *Payload
 	RetriesLeft   int
 	CronExpr      string
+	ExecutionID   string
 }
 
 type Payload struct {
@@ -56,6 +59,7 @@ type RunTimeTask struct {
 	RetriesLeft   int
 	CronExpr      string
 	WorkerID      string
+	ExecutionID   string
 }
 
 type UserInfo struct {
@@ -63,6 +67,20 @@ type UserInfo struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Role     int    `json:"role"`
+}
+
+type TaskIDExecIDMap struct {
+	TaskID      string
+	ExecutionID string
+}
+
+func (t *TaskIDExecIDMap) Validate() error {
+	if t.TaskID == "" {
+		return errors.New("task id cannot be empty")
+	} else if t.ExecutionID == "" {
+		return errors.New("execution id cannot be empty")
+	}
+	return nil
 }
 
 func (t *UserInfo) Validate() error {
@@ -146,5 +164,6 @@ const TWENTYFOURBIT = 24
 const REDISPORTOFFSET = 6900
 const RUNNING_JOBS_RECORD = "running_tasks_record"
 const TASKS_FULL_RECORD = "job_full_info"
+const TASKID_TO_EXECID = "taskid_execid_mapping"
 const ONE_TIME_JOB_RETRY_TIME = 2 * time.Second
 const RECURRING_JOB_RETRY_TIME = 2 * time.Second

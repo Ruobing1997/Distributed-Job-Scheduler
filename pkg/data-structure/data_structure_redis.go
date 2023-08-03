@@ -56,7 +56,7 @@ func maximumConnectionRetry() *redis.Client {
 
 func AddJob(e *constants.TaskCache) {
 	if (client.HExists(context.Background(), REDIS_MAP_KEY, e.ID)).Val() {
-		log.Printf("update %s already exists in redis", e.ID)
+		log.Printf("task %s already exists in redis", e.ID)
 		return
 	}
 	data, err := json.Marshal(e)
@@ -199,19 +199,20 @@ func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 	return matureTasks
 }
 
-func SetLeaseWithID(taskID string, duration time.Duration) error {
+func SetLeaseWithID(taskID string, execID string, duration time.Duration) error {
 	log.Printf("----------------------------")
 	log.Printf("set lease for task %s", taskID)
-	leaseKey := fmt.Sprintf("lease:update:%s", taskID)
-	err := client.SetEx(context.Background(), leaseKey, REDIS_LEASE_MAP_VALUE_PROCESSING, duration).Err()
+	leaseKey := fmt.Sprintf("lease:task:%sexecute:%s", taskID, execID)
+	err := client.SetEx(context.Background(), leaseKey,
+		REDIS_LEASE_MAP_VALUE_PROCESSING, duration).Err()
 	if err != nil {
 		return fmt.Errorf("set lease failed: %v", err)
 	}
 	return nil
 }
 
-func RemoveLeaseWithID(taskID string) error {
-	leaseKey := fmt.Sprintf("lease:update:%s", taskID)
+func RemoveLeaseWithID(taskID string, execID string) error {
+	leaseKey := fmt.Sprintf("lease:task:%sexecute:%s", taskID, execID)
 	err := client.Del(context.Background(), leaseKey).Err()
 	if err != nil {
 		return fmt.Errorf("remove lease failed: %v", err)

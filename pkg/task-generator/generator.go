@@ -71,6 +71,10 @@ func GenerateTaskCache(id string, jobType int, cronExpr string,
 	}
 }
 
+func GenerateExecutionID(taskCache *constants.TaskCache) string {
+	return uuid.New().String()
+}
+
 func GeneratePayload(jobType int, script string) *constants.Payload {
 	return &constants.Payload{
 		Format: jobType,
@@ -80,6 +84,7 @@ func GeneratePayload(jobType int, script string) *constants.Payload {
 
 func GenerateRunTimeTaskThroughTaskCache(task *constants.TaskCache,
 	jobStatus int, workerID string) *constants.RunTimeTask {
+	log.Printf("-------------------------------------------------")
 	log.Printf("GenerateRunTimeTaskThroughTaskCache: %v", task)
 	runningTaskInfo := &constants.RunTimeTask{
 		ID:            task.ID,
@@ -89,6 +94,7 @@ func GenerateRunTimeTaskThroughTaskCache(task *constants.TaskCache,
 		RetriesLeft:   task.RetriesLeft,
 		CronExpr:      task.CronExpr,
 		WorkerID:      workerID,
+		ExecutionID:   task.ExecutionID,
 	}
 	runningTaskInfo.Payload = GeneratePayload(task.Payload.Format, task.Payload.Script)
 	return runningTaskInfo

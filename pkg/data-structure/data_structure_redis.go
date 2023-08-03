@@ -76,6 +76,36 @@ func AddJob(e *constants.TaskCache) {
 	}
 }
 
+func AddRetry(e *constants.TaskCache) {
+	data, err := json.Marshal(e)
+	if err != nil {
+		log.Printf("marshal update cache failed: %v", err)
+	}
+	client.LPush(context.Background(), REDIS_RETRY_KEY, data)
+	client.Publish(context.Background(), REDIS_CHANNEL, RETRY_AVAILABLE)
+}
+
+func PopRetry() (*constants.TaskCache, error) {
+	result, err := client.RPop(context.Background(), REDIS_RETRY_KEY).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, fmt.Errorf("no retry task in redis")
+		}
+		log.Printf("get next job failed: %v", err)
+		return nil, err
+	}
+
+	var e constants.TaskCache
+	// Decode the job name and execution time from the JSON string
+	if len(result) > 0 {
+		if err := json.Unmarshal([]byte(result), &e); err != nil {
+			log.Printf("unmarshal update cache failed: %v", err)
+			return nil, err
+		}
+	}
+	return &e, nil
+}
+
 func PopNextJob() *constants.TaskCache {
 	result, err := client.ZPopMin(context.Background(), REDIS_PQ_KEY).Result()
 	if err != nil {
@@ -201,7 +231,7 @@ func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 
 func SetLeaseWithID(taskID string, execID string, duration time.Duration) error {
 	log.Printf("----------------------------")
-	log.Printf("set lease for task %s", taskID)
+	log.Printf("set lease for task %s + execute %s", taskID, execID)
 	leaseKey := fmt.Sprintf("lease:task:%sexecute:%s", taskID, execID)
 	err := client.SetEx(context.Background(), leaseKey,
 		REDIS_LEASE_MAP_VALUE_PROCESSING, duration).Err()

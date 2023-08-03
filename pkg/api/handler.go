@@ -74,14 +74,14 @@ func UpdateTaskHandler(c *gin.Context) {
 		jobName, jobType, cronExpr, format, script, retries)
 
 	updateVarsMap := map[string]interface{}{
-		"job_name":       jobName,
-		"job_type":       jobType,
-		"cron_expr":      cronExpr,
-		"execute_format": format,
-		"execute_script": script,
-		"update_time":    time.Now(),
-		"create_time":    time.Now(),
-		"retries":        retries}
+		"job_name":        jobName,
+		"job_type":        jobType,
+		"cron_expression": cronExpr,
+		"execute_format":  format,
+		"execute_script":  script,
+		"update_time":     time.Now(),
+		"create_time":     time.Now(),
+		"retries_left":    retries}
 	err := task_manager.HandleUpdateTasks(
 		taskID, updateVarsMap)
 

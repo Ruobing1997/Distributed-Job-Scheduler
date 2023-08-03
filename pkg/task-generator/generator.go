@@ -63,15 +63,15 @@ func GenerateTaskCache(id string, jobType int, cronExpr string,
 	executionTime time.Time, retriesLeft int, payload *constants.Payload) *constants.TaskCache {
 	return &constants.TaskCache{
 		ID:            id,
-		JobType:       jobType,
-		CronExpr:      cronExpr,
 		ExecutionTime: executionTime,
-		RetriesLeft:   retriesLeft,
+		JobType:       jobType,
 		Payload:       payload,
+		RetriesLeft:   retriesLeft,
+		CronExpr:      cronExpr,
 	}
 }
 
-func GenerateExecutionID(taskCache *constants.TaskCache) string {
+func GenerateExecutionID() string {
 	return uuid.New().String()
 }
 

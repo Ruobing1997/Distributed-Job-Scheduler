@@ -34,13 +34,19 @@ var startCmd = &cobra.Command{
 	Short: "Start Run MorFun_SuperNova Manager",
 	Long:  "Start Run MorFun_SuperNova Manager, make manager to listen to tasks and dispatch them when needed",
 	Run: func(cmd *cobra.Command, args []string) {
+		task_manager.InitConnection()
+		fmt.Println("MorFun_SuperNova Manager Init")
+		task_manager.Start()
+		fmt.Println("MorFun_SuperNova Manager Start")
+		go task_manager.InitManagerGRPC()
 		fmt.Println("***********************************************************")
 		fmt.Println("***MorFun_SuperNova Manager All set, you are good to go***")
 		fmt.Println("***********************************************************")
 		managerControl := &ServerControl{}
-		task_manager.InitLeaderElection(managerControl)
-		fmt.Println("MorFun_SuperNova Manager Start Leader Election")
+		//task_manager.InitLeaderElection(managerControl)
+		//fmt.Println("MorFun_SuperNova Manager Start Leader Election")
 		time.Sleep(2 * time.Second)
+		managerControl.StartAPIServer()
 	},
 }
 

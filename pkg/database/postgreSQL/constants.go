@@ -30,7 +30,7 @@ const (
 		INSERT INTO running_tasks_record 
 			(id, execution_time, job_type, job_status, execute_format, execute_script, 
 			 retries_left, cron_expression, worker_id, execution_id) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (execution_id)
 		DO UPDATE SET 
 			job_status = EXCLUDED.job_status,

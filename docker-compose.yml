@@ -10,7 +10,7 @@ services:
       - "8080:8080"
   manager:
     image: morefun-supernova-manager:3.0
-    command: ["/usr/wait-for-it.sh", "postgresql:5432", "--", "/usr/wait-for-it.sh", "redis:6379", "--", "/usr/wait-for-it.sh", "worker:50051", "--", "/app/manager", "start"]
+    command: ["/usr/wait-for-it.sh", "postgres:5432", "--", "/usr/wait-for-it.sh", "redis:6379", "--", "/usr/wait-for-it.sh", "worker:50051", "--", "/app/manager", "start"]
     depends_on:
       - redis
       - postgres
@@ -22,7 +22,8 @@ services:
       WORKER_SERVICE: "worker"
       MANAGER_SERVICE: "manager"
       POSTGRES: "postgres"
-      POSTGRES_URL: "host=postgres port=5432 user=postgres password=${POSTGRES_PASSWORD} dbname=postgres sslmode=disable"
+      POSTGRES_URL: "host=postgres port=5432 user=postgres dbname=postgres sslmode=disable"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
     ports:
       - "9090:9090"
 
@@ -33,7 +34,8 @@ services:
     environment:
       MANAGER_SERVICE: "manager"
       POSTGRES: "postgres"
-      POSTGRES_URL: "host=postgres port=5432 user=postgres password=${POSTGRES_PASSWORD} dbname=postgres sslmode=disable"
+      POSTGRES_URL: "host=postgres port=5432 user=postgres dbname=postgres sslmode=disable"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
 
   redis:
     image: redis:latest

@@ -180,9 +180,9 @@ func addNewJobToRedis(taskDB *constants.TaskDB) {
 		taskDB.ExecutionTime,
 		taskDB.Retries,
 		taskDB.Payload)
-	taskCache.ExecutionID = generator.GenerateExecutionID(taskCache)
+	taskCache.ExecutionID = generator.GenerateExecutionID()
 	data_structure_redis.AddJob(taskCache)
-	log.Printf("Task %v added to priority queue. Now the Q length is: %d",
+	log.Printf("Task %v. the Q length is: %d",
 		taskCache, data_structure_redis.GetQLength())
 }
 
@@ -263,7 +263,7 @@ func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 	if data_structure_redis.CheckTasksInDuration(taskCache.ExecutionTime, DURATION) {
 		// insert update to priority queue
 		// 更新完按照新任务处理
-		taskCache.ExecutionID = generator.GenerateExecutionID(taskCache)
+		taskCache.ExecutionID = generator.GenerateExecutionID()
 		data_structure_redis.AddJob(taskCache)
 	}
 	return nil
@@ -322,6 +322,19 @@ func SubscribeToRedisChannel() {
 			}
 			taskProcessingLock.Unlock()
 
+		} else if msg.Payload == data_structure_redis.RETRY_AVAILABLE {
+			for {
+				retryTask, err := data_structure_redis.PopRetry()
+				if err != nil {
+					break
+				}
+				log.Printf("retrying task: %s with job type %s", retryTask.ID,
+					constants.TypeMap[retryTask.JobType])
+				_, status, _ := HandoutTasksForExecuting(retryTask)
+				if status == constants.JOBFAILED {
+					handleJobFailed(retryTask, status)
+				}
+			}
 		}
 	}
 }
@@ -346,18 +359,17 @@ func executeMatureTasks() error {
 			return err
 		}
 
+		// TODO: 可能需要放在一个goroutine里面
 		workerID, status, err := HandoutTasksForExecuting(task)
+		log.Printf("dispatch task: %s and executing by %s, "+
+			"found error: %v with status %s", task.ID, workerID, err, constants.StatusMap[status])
+		if status == constants.JOBFAILED {
+			handleJobFailed(task, status)
+		}
 
 		// check if the job is recurring job, if so, update the execution time
 		//and add it to redis priority queue if in next 10 mins
 		go handleRecurringJobAfterDispatch(task)
-		go handleJobFailed(task, status)
-
-		log.Printf("dispatch task: %s and executing by %s, found error: %v", task.ID, workerID, err)
-
-		if err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -374,7 +386,7 @@ func handleRecurringJobAfterDispatch(task *constants.TaskCache) {
 
 		if data_structure_redis.CheckTasksInDuration(newExecutionTime, DURATION) {
 			// Re dispatch the task
-			task.ExecutionID = generator.GenerateExecutionID(task)
+			task.ExecutionID = generator.GenerateExecutionID()
 			data_structure_redis.AddJob(task)
 		}
 	}
@@ -457,6 +469,8 @@ func MonitorHeadNode() {
 }
 
 func handleJobFailed(task *constants.TaskCache, jobStatusCode int) error {
+	log.Printf("----------------------------")
+	log.Printf("handle job failed: %s Exec ID: %s", task.ID, task.ExecutionID)
 	// update task status to 3
 	// task_db only update when the update is completely failed (retries == 0 or outdated)
 	if checkJobCompletelyFailed(task) {
@@ -484,8 +498,12 @@ func handleCompletelyFailedJob(task *constants.TaskCache, jobStatusCode int) err
 	// update completely failed need to update all information for report user.
 	err := data_structure_redis.RemoveLeaseWithID(task.ID, task.ExecutionID)
 	// update the task according to task execution id.
-	err = databaseClient.UpdateByExecutionID(context.Background(), constants.RUNNING_JOBS_RECORD,
-		task.ExecutionID, map[string]interface{}{"job_status": jobStatusCode})
+	err = databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD,
+		task.ID, map[string]interface{}{
+			"job_status":              jobStatusCode,
+			"update_time":             time.Now(),
+			"previous_execution_time": task.ExecutionTime,
+		})
 	if err != nil {
 		return err
 	}
@@ -497,9 +515,11 @@ func handleCompletelyFailedJob(task *constants.TaskCache, jobStatusCode int) err
 
 // RescheduleFailedJobs reenter the task to queue and update the retries
 func RescheduleFailedJobs(task *constants.TaskCache) error {
+	log.Printf("------------------------------------------")
+	log.Printf("Reschedule failed job: %s retries left: %d", task.ID, task.RetriesLeft)
 	curRetries := task.RetriesLeft - 1
-	err := databaseClient.UpdateByID(context.Background(), constants.RUNNING_JOBS_RECORD, task.ID,
-		map[string]interface{}{
+	err := databaseClient.UpdateByExecutionID(context.Background(), constants.RUNNING_JOBS_RECORD,
+		task.ExecutionID, map[string]interface{}{
 			"job_status":   constants.JOBRETRYING,
 			"retries_left": curRetries,
 			"worker_id":    ""})
@@ -509,7 +529,7 @@ func RescheduleFailedJobs(task *constants.TaskCache) error {
 
 	task.RetriesLeft = curRetries
 	// 此时执行ID不应该发生变化，因为是同一个job的重试逻辑
-	data_structure_redis.AddJob(task)
+	data_structure_redis.AddRetry(task)
 	return nil
 }
 
@@ -544,11 +564,25 @@ func checkRecurringJobOutdated(executionTime time.Time) bool {
 
 // HandleExpiryTasks handles the expiry tasks
 func HandleExpiryTasks(msg *redis.Message) {
-	// The key format is "lease:update:<task_id>"
-	if strings.HasPrefix(msg.Payload, "lease:update:") {
-		taskID := strings.TrimPrefix(msg.Payload, "lease:update:")
-		log.Printf("Task %s is expired", taskID)
-		err := HandleUnRenewLeaseJobThroughDB(taskID)
+	// The expected key format is "lease:task:<taskID>execute:<execID>"
+	prefix := "lease:task:"
+	suffix := "execute:"
+
+	if strings.HasPrefix(msg.Payload, prefix) {
+		trimmedStr := strings.TrimPrefix(msg.Payload, prefix) // removing "lease:task:" prefix
+		splitIndex := strings.Index(trimmedStr, suffix)
+
+		if splitIndex == -1 {
+			log.Printf("Invalid message format received: %s", msg.Payload)
+			return
+		}
+
+		taskID := trimmedStr[:splitIndex]
+		execID := strings.TrimPrefix(trimmedStr[splitIndex:], suffix)
+
+		log.Printf("Task ID: %s, Execution ID: %s", taskID, execID)
+
+		err := HandleUnRenewLeaseJobThroughDB(execID)
 		if err != nil {
 			log.Printf("Lease renew failed: %v", err)
 		}
@@ -569,8 +603,6 @@ func HandleUnRenewLeaseJobThroughDB(id string) error {
 	}
 	runTimeTask := record.(*constants.RunTimeTask)
 	if checkJobCompletelyFailed(runTimeTask) {
-		// update completely failed need to update all information for report user.
-		err := databaseClient.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, runTimeTask.ID)
 		if err != nil {
 			return err
 		}
@@ -589,6 +621,7 @@ func HandleUnRenewLeaseJobThroughDB(id string) error {
 			runTimeTask.RetriesLeft,
 			runTimeTask.Payload,
 		)
+		task.ExecutionID = runTimeTask.ExecutionID
 		err := RescheduleFailedJobs(task)
 		if err != nil {
 			return err
@@ -647,10 +680,12 @@ func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 	taskCache := generator.GenerateTaskCache(
 		runningTask.ID, runningTask.JobType, runningTask.CronExpr,
 		runningTask.ExecutionTime, runningTask.RetriesLeft, payload)
+	taskCache.ExecutionID = in.ExecId
 
 	if in.Status == int32(constants.JOBSUCCEED) {
 		log.Printf("Job SUCCEED with task id: %s and exeution id: %s from worker: %s",
 			in.TaskId, in.ExecId, in.WorkerId)
+		handleJobSucceed(taskCache)
 	} else {
 		log.Printf("Job FAILED with task id: %s and exeution id: %s from worker: %s",
 			in.TaskId, in.ExecId, in.WorkerId)
@@ -703,14 +738,6 @@ func handleRecurringJobSucceed(task *constants.TaskCache) error {
 	err := databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID, updateVars)
 	if err != nil {
 		return err
-	}
-	task.ExecutionTime = newExecutionTime
-	err = data_structure_redis.RemoveLeaseWithID(task.ID, task.ExecutionID)
-	if err != nil {
-		return err
-	}
-	if data_structure_redis.CheckTasksInDuration(newExecutionTime, DURATION) {
-		data_structure_redis.AddJob(task)
 	}
 	return nil
 }

@@ -98,7 +98,7 @@ func InitLeaderElection(control ServerControlInterface) {
 		Lock:            lock,
 		ReleaseOnCancel: true,
 		LeaseDuration:   60 * time.Second,
-		RenewDeadline:   40 * time.Second,
+		RenewDeadline:   10 * time.Second,
 		RetryPeriod:     5 * time.Second,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
@@ -247,9 +247,9 @@ func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 			taskCache.Payload.Format = value.(int)
 		case "execute_script":
 			taskCache.Payload.Script = value.(string)
-		case "retries":
+		case "retries_left":
 			taskCache.RetriesLeft = value.(int)
-		case "cron_expr":
+		case "cron_expression":
 			taskCache.CronExpr = value.(string)
 			taskCache.ExecutionTime = generator.DecryptCronExpress(value.(string))
 		}
@@ -358,7 +358,7 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 	if workerService == "" {
 		workerService = WORKER_SERVICE
 	}
-	conn, err := grpc.Dial(workerService+":50051", grpc.WithInsecure())
+	conn, err := grpc.Dial(workerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		return task.ID, constants.JOBFAILED, fmt.Errorf("did not connect: %v", err)
 	}
@@ -502,7 +502,7 @@ func handleOneTimeJobSucceed(task *constants.TaskCache) error {
 	// if it is one time job, only update the task_db table
 	updateVars := map[string]interface{}{
 		"update_time":             time.Now(),
-		"status":                  constants.JOBSUCCEED,
+		"job_status":              constants.JOBSUCCEED,
 		"previous_execution_time": task.ExecutionTime,
 	}
 	err := databaseClient.UpdateByID(context.Background(),
@@ -525,7 +525,7 @@ func handleRecurringJobSucceed(task *constants.TaskCache) error {
 	updateVars := map[string]interface{}{
 		"execution_time":          newExecutionTime,
 		"update_time":             time.Now(),
-		"status":                  constants.JOBREENTERED,
+		"job_status":              constants.JOBREENTERED,
 		"previous_execution_time": task.ExecutionTime,
 	}
 	err := databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID, updateVars)
@@ -548,7 +548,7 @@ func handleJobDispatched(task *constants.TaskCache, jobStatusCode int) error {
 	// happens once the job is dispatched to worker
 	// only update the task_db table in postgresql
 	err := databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID,
-		map[string]interface{}{"status": jobStatusCode})
+		map[string]interface{}{"job_status": jobStatusCode})
 	if err != nil {
 		return err
 	}
@@ -569,7 +569,7 @@ func RescheduleFailedJobs(task *constants.TaskCache) error {
 			"retries_left":            curRetries,
 			"previous_execution_time": task.ExecutionTime,
 			"update_time":             time.Now(),
-			"status":                  constants.JOBRETRYING})
+			"job_status":              constants.JOBRETRYING})
 	if err != nil {
 		return err
 	}
@@ -664,9 +664,9 @@ func HandleUnRenewLeaseJobThroughDB(id string) error {
 
 func getJobInfo(data interface{}) (int, int, time.Time) {
 	switch v := data.(type) {
-	case constants.TaskCache:
+	case *constants.TaskCache:
 		return v.JobType, v.RetriesLeft, v.ExecutionTime
-	case constants.RunTimeTask:
+	case *constants.RunTimeTask:
 		return v.JobType, v.RetriesLeft, v.ExecutionTime
 	default:
 		panic("unsupported data type")
@@ -732,6 +732,7 @@ func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 
 func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (*pb.RenewLeaseResponse, error) {
 	// worker should ask for a new lease before the current lease expires
+	log.Printf("Received Renew Lease Request for Task: %s", in.Id)
 	err := data_structure_redis.SetLeaseWithID(in.Id, in.LeaseDuration.AsDuration())
 	if err != nil {
 		return &pb.RenewLeaseResponse{Success: false},

@@ -7,24 +7,24 @@ const DBDRIVER = "postgres"
 const (
 	InsertOrUpdateTaskFullInfo = `
 		INSERT INTO job_full_info 
-			(id, job_name, job_type, cron_expr, execute_format, execute_script, callback_url, status,
+			(id, job_name, job_type, cron_expression, execute_format, execute_script, callback_url, job_status,
 			 execution_time, previous_execution_time, 
-			 create_time, update_time, retries) 
+			 create_time, update_time, retries_left) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (id) 
 		DO UPDATE SET 
 			job_name = EXCLUDED.job_name,
 			job_type = EXCLUDED.job_type,
-			cron_expr = EXCLUDED.cron_expr,
+			cron_expression = EXCLUDED.cron_expression,
 			execute_format = EXCLUDED.execute_format,
 			execute_script = EXCLUDED.execute_script,
 			callback_url = EXCLUDED.callback_url,
-			status = EXCLUDED.status,
+			job_status = EXCLUDED.job_status,
 			execution_time = EXCLUDED.execution_time,
 			previous_execution_time = EXCLUDED.previous_execution_time,
 			create_time = EXCLUDED.create_time,
 			update_time = EXCLUDED.update_time,
-			retries = EXCLUDED.retries
+			retries_left = EXCLUDED.retries_left
 	`
 	InsertOrUpdateRunningTask = `
 		INSERT INTO running_tasks_record 

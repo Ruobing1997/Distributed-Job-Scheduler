@@ -67,11 +67,6 @@ func (*ServerControl) StartAPIServer() {
 	r.GET("/api/running_tasks", func(c *gin.Context) {
 		api.RunningTasksHandler(c)
 	})
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "pong",
-		})
-	})
 
 	server = &http.Server{
 		Addr:    ":9090",

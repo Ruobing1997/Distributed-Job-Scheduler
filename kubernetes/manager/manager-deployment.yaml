@@ -15,17 +15,18 @@ spec:
       labels:
         app: manager
     spec:
+      initContainers:
+        - name: init-wait-for-postgres
+          image: busybox
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 1; done;']
+        - name: init-wait-for-redis
+          image: busybox
+          command: ['sh', '-c', 'until nc -z redis 6379; do sleep 1; done;']
+        - name: init-wait-for-worker
+          image: busybox
+          command: ['sh', '-c', 'until nc -z worker 50051; do sleep 1; done;']
       containers:
         - args:
-            - /usr/wait-for-it.sh
-            - postgres:5432
-            - --
-            - /usr/wait-for-it.sh
-            - redis:6379
-            - --
-            - /usr/wait-for-it.sh
-            - worker:50051
-            - --
             - /app/manager
             - start
           name: manager

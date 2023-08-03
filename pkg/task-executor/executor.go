@@ -119,7 +119,7 @@ func notifyManagerTaskResult(taskID string, jobStatus int) {
 	if managerService == "" {
 		managerService = MANAGER_SERVICE
 	}
-	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure())
+	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
@@ -169,7 +169,7 @@ func RenewLease(taskID string, duration time.Duration) (bool, error) {
 	if managerService == "" {
 		managerService = MANAGER_SERVICE
 	}
-	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure())
+	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}

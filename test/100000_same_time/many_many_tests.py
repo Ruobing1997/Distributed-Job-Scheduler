@@ -2,7 +2,7 @@ import requests
 import threading
 
 BASE_URL = "http://localhost:8080/api/generate"
-TOTAL_REQUESTS = 1
+TOTAL_REQUESTS = 10000
 
 def send_request(job_name):
     headers = {

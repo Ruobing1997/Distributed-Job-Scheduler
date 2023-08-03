@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: morefun-supernova-worker:2.0
+          image: morefun-supernova-worker:3.0
           args:
             - /app/executor
             - start

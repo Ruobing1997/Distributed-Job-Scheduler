@@ -30,7 +30,7 @@ spec:
             - /app/manager
             - start
           name: manager
-          image: morefun-supernova-manager:2.0
+          image: morefun-supernova-manager:3.0
           env:
             - name: REDIS_ADDR
               value: "redis:6379"

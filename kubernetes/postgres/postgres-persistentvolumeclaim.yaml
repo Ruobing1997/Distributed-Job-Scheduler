@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: postgres-pvc1
+  name: postgres-pvc
   namespace: supernova
 spec:
   storageClassName: "local-storage"

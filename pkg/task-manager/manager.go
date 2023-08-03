@@ -97,7 +97,7 @@ func InitLeaderElection(control ServerControlInterface) {
 		Lock:            lock,
 		ReleaseOnCancel: true,
 		LeaseDuration:   60 * time.Second,
-		RenewDeadline:   10 * time.Second,
+		RenewDeadline:   30 * time.Second,
 		RetryPeriod:     5 * time.Second,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {

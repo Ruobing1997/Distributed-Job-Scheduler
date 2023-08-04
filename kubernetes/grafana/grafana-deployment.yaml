@@ -20,8 +20,8 @@ spec:
             - containerPort: 3000
           volumeMounts:
             - mountPath: /var/lib/grafana/data
-              name: grafana-pv0
+              name: grafana-pv-docker-volume
       volumes:
-        - name: grafana-pv0
+        - name: grafana-pv-docker-volume
           persistentVolumeClaim:
-            claimName: grafana-pvc0
+            claimName: grafana-pvc-docker-volume

@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: postgres-pvc-10g
+  name: postgres-pvc-docker-volume
   namespace: supernova
 spec:
-  storageClassName: "local-storage"
+  storageClassName: manual
   accessModes:
     - ReadWriteOnce
   resources:

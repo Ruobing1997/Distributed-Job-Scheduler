@@ -13,6 +13,13 @@ spec:
       labels:
         app: grafana
     spec:
+      initContainers:
+        - name: volume-permission
+          image: busybox
+          command: ["sh", "-c", "chown -R 472:472 /var/lib/grafana/"]
+          volumeMounts:
+            - mountPath: /var/lib/grafana/
+              name: grafana-pv-docker-volume
       securityContext:
         fsGroup: 472
       containers:

@@ -10,5 +10,5 @@ spec:
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: /data/postgres-data/
+    path: /var/lib/docker/volumes/postgres-data/_data
   

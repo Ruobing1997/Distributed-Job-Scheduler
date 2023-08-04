@@ -17,6 +17,9 @@ data:
       - job_name: 'worker'
         static_configs:
           - targets: ['worker:9797']
+      - job_name: 'kube-state-metrics'
+        static_configs:
+          - targets: ['kube-state-metrics:8080']
       - job_name: 'node-exporter'
         kubernetes_sd_configs:
           - role: node

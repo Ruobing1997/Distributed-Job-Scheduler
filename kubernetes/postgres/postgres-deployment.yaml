@@ -32,12 +32,12 @@ spec:
             - name: postgres-init
               mountPath: /docker-entrypoint-initdb.d/init.sql
               subPath: init.sql
-            - name: postgres-pv
+            - name: postgres-pv-10g
               mountPath: /var/lib/postgresql/data
       volumes:
         - name: postgres-init
           configMap:
             name: postgres-init-script
-        - name: postgres-pv
+        - name: postgres-pv-10g
           persistentVolumeClaim:
-            claimName: postgres-pvc
+            claimName: postgres-pvc-10g

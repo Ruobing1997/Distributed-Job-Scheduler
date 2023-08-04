@@ -21,12 +21,5 @@ data:
         static_configs:
           - targets: ['kube-state-metrics:8080']
       - job_name: 'node-exporter'
-        kubernetes_sd_configs:
-          - role: node
-        relabel_configs:
-          - action: labelmap
-            regex: __meta_kubernetes_node_label_(.+)
-          - target_label: __address__
-            replacement: ${1}:9100
-          - source_labels: [__meta_kubernetes_node_name]
-            target_label: instance
+        static_configs:
+          - targets: ['node-exporter:9100']

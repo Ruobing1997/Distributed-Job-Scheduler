@@ -76,7 +76,7 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 			"job_status": constants.JOBRUNNING,
 			"worker_id":  workerID,
 		})
-	postgresqlOpsTotal.With(prometheus.Labels{"method": "UPDATE", "table": constants.RUNNING_JOBS_RECORD}).Inc()
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE", "table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if err != nil {
 		log.Fatalf("insert task: %s with Execution ID: %s "+
 			"into database failed: %v", task.ID, task.ExecutionID, err)
@@ -105,7 +105,7 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 			err = databaseClient.UpdateByExecutionID(context.Background(),
 				constants.RUNNING_JOBS_RECORD, task.ExecutionID,
 				map[string]interface{}{"job_status": constants.JOBFAILED})
-			postgresqlOpsTotal.With(prometheus.Labels{"method": "UPDATE",
+			postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE",
 				"table": constants.RUNNING_JOBS_RECORD}).Inc()
 			if err != nil {
 				notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBFAILED)
@@ -117,7 +117,7 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 			err = databaseClient.UpdateByExecutionID(context.Background(),
 				constants.RUNNING_JOBS_RECORD, task.ExecutionID,
 				map[string]interface{}{"job_status": constants.JOBSUCCEED})
-			postgresqlOpsTotal.With(prometheus.Labels{"method": "UPDATE",
+			postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE",
 				"table": constants.RUNNING_JOBS_RECORD}).Inc()
 			if err != nil {
 				notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBFAILED)

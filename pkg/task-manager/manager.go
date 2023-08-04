@@ -513,6 +513,7 @@ func handleJobFailed(task *constants.TaskCache, jobStatusCode int) error {
 	// update task status to 3
 	// task_db only update when the update is completely failed (retries == 0 or outdated)
 	if checkJobCompletelyFailed(task) {
+		failedTasksTotal.Inc()
 		return handleCompletelyFailedJob(task, jobStatusCode)
 	}
 	return handleRescheduleFailedJob(task)
@@ -582,7 +583,6 @@ func RescheduleFailedJobs(task *constants.TaskCache) error {
 }
 
 func checkJobCompletelyFailed(data interface{}) bool {
-	failedTasksTotal.Inc()
 	jobType, retriesLeft, executionTime := getJobInfo(data)
 	if jobType == constants.OneTime {
 		if checkOneTimeJobOutdated(executionTime) {
@@ -655,6 +655,7 @@ func HandleUnRenewLeaseJobThroughDB(id string) error {
 	}
 	runTimeTask := record.(*constants.RunTimeTask)
 	if checkJobCompletelyFailed(runTimeTask) {
+		failedTasksTotal.Inc()
 		if err != nil {
 			return err
 		}

@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	task_executor "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-executor"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"log"
+	"net/http"
 	"os"
 	"time"
 )
@@ -26,12 +28,13 @@ var startCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		task_executor.Init()
 		fmt.Println("MorFun_SuperNova Worker Init")
+		http.Handle("/metrics", promhttp.Handler())
 		go task_executor.InitWorkerGRPC()
 		time.Sleep(2 * time.Second)
 		fmt.Println("****************************************************")
 		fmt.Println("**Worker All set, Worker is ready to execute tasks**")
 		fmt.Println("****************************************************")
-		select {} // run forever
+		http.ListenAndServe(":9797", nil)
 	},
 }
 

@@ -87,16 +87,11 @@
             })
         }
 
+        function viewHistory(taskID) {
+            window.location.href = `task/${taskID}/history`;
+        }
+
         window.onload = function () {
-            const statusMap = {
-                0: "Pending",
-                1: "Running",
-                2: "Completed",
-                3: "Failed",
-                4: "ReEntered",
-                5: "Retrying",
-                6: "Dispatched",
-            }
             const typeMap = {
                 0: "OneTime",
                 1: "Recurring",
@@ -105,11 +100,6 @@
                 0 : "Shell",
                 1 : "Python"
             }
-
-            const statusElems = document.querySelectorAll(".status");
-            statusElems.forEach(elem => {
-                elem.textContent = statusMap[elem.textContent];
-            });
 
             const typeElems = document.querySelectorAll(".type");
             typeElems.forEach(elem => {
@@ -134,9 +124,7 @@
         <th>Cron Expression</th>
         <th>Payload Format</th>
         <th>Payload Script</th>
-        <th>Status</th>
         <th>Execution Time</th>
-        <th>Previous Execution Time</th>
         <th>Create Time</th>
         <th>Update Time</th>
         <th>Retries</th>
@@ -153,14 +141,13 @@
         <td>{{.CronExpr}}</td>
         <td class="format">{{.Payload.Format}}</td>
         <td>{{.Payload.Script}}</td>
-        <td class="status">{{.Status}}</td>
         <td>{{.ExecutionTime}}</td>
-        <td>{{.PreviousExecutionTime}}</td>
         <td>{{.CreateTime}}</td>
         <td>{{.UpdateTime}}</td>
         <td>{{.Retries}}</td>
         <td>
             <button onclick="deleteTask('{{.ID}}')">Delete</button>
+            <button onclick="viewHistory('{{.ID}}')">History</button>
         </td>
     </tr>
     {{end}}

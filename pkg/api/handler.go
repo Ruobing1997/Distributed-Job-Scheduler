@@ -120,3 +120,13 @@ func RunningTasksHandler(c *gin.Context) {
 	}
 	c.HTML(http.StatusOK, "running_tasks_dashboard_index.html", tasks)
 }
+
+func TaskHistoryHandler(c *gin.Context) {
+	taskID := c.Param("id")
+	tasks, err := task_manager.HandleGetTaskHistory(taskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.HTML(http.StatusOK, "history_index.html", tasks)
+}

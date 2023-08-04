@@ -67,6 +67,9 @@ func (*ServerControl) StartAPIServer() {
 	r.GET("/api/running_tasks", func(c *gin.Context) {
 		api.RunningTasksHandler(c)
 	})
+	r.GET("/api/task/:id/history", func(c *gin.Context) {
+		api.TaskHistoryHandler(c)
+	})
 
 	server = &http.Server{
 		Addr:    ":9090",

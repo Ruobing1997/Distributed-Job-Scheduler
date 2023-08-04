@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f5f7;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            color: #007bff;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            border: 1px solid #ddd;
+            background-color: white;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+
+        tr:hover {
+            background-color: #f2f2f2;
+        }
+
+        a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        .btn {
+            display: inline-block;
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn:hover {
+            background-color: #0056b3;
+        }
+
+        .btn-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .content-container {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .half {
+            width: 48%; /* 为了有一些间隙 */
+            overflow-x: auto; /* 水平滚动条 */
+        }
+    </style>
+    <script>
+        window.onload = function () {
+            const statusMap = {
+                0: "Pending",
+                1: "Running",
+                2: "Completed",
+                3: "Failed",
+                4: "ReEntered",
+                5: "Retrying",
+                6: "Dispatched",
+            }
+            const typeMap = {
+                0: "OneTime",
+                1: "Recurring",
+            }
+            const formatMap = {
+                0 : "Shell",
+                1 : "Python"
+            }
+
+            const statusElems = document.querySelectorAll(".status");
+            statusElems.forEach(elem => {
+                elem.textContent = statusMap[elem.textContent];
+            });
+
+            const typeElems = document.querySelectorAll(".type");
+            typeElems.forEach(elem => {
+                elem.textContent = typeMap[elem.textContent];
+            });
+
+            const formatElems = document.querySelectorAll(".format");
+            formatElems.forEach(elem => {
+                elem.textContent = formatMap[elem.textContent];
+            });
+        }
+    </script>
+</head>
+
+<body>
+<h1>Executed History</h1>
+<table>
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>Execution Time</th>
+        <th>Job Type</th>
+        <th>Job Status</th>
+        <th>Payload Format</th>
+        <th>Payload Script</th>
+        <th>Retries Left</th>
+        <th>Cron Expression</th>
+        <th>Worker ID</th>
+        <th>Execution ID</th>
+    </tr>
+    </thead>
+    <tbody>
+    <!-- 使用后端模板技术填充数据 -->
+    {{range .}}
+    <tr>
+        <td>{{.ID}}</td>
+        <td>{{.ExecutionTime}}</td>
+        <td class="type">{{.JobType}}</td>
+        <td class="status">{{.JobStatus}}</td>
+        <td class="format">{{.Payload.Format}}</td>
+        <td>{{.Payload.Script}}</td>
+        <td>{{.RetriesLeft}}</td>
+        <td>{{.CronExpr}}</td>
+        <td>{{.WorkerID}}</td>
+        <td>{{.ExecutionID}}</td>
+    </tr>
+    {{end}}
+    </tbody>
+</table>
+
+</body>
+
+</html>

@@ -10,4 +10,4 @@ spec:
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: /var/lib/docker/volumes/grafana-data/_data
+    path: /data/grafana-data

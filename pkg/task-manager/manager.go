@@ -293,6 +293,14 @@ func HandleGetRunningTasks() ([]*constants.RunTimeTask, error) {
 	return tasks, nil
 }
 
+func HandleGetTaskHistory(taskID string) ([]*constants.RunTimeTask, error) {
+	records, err := databaseClient.GetTaskHistoryByID(context.Background(), taskID)
+	if err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
 func AddTasksFromDBWithTickers() {
 	tasks, _ := databaseClient.GetTasksInInterval(time.Now(), time.Now().Add(DURATION), timeTracker)
 	timeTracker = time.Now()

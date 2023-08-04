@@ -272,3 +272,40 @@ func (c *Client) CountRunningTasks(ctx context.Context, idValue string) (int, er
 	}
 	return count, nil
 }
+
+func (c *Client) GetTaskHistoryByID(ctx context.Context, taskID string) ([]*constants.RunTimeTask, error) {
+	// 这是一个示例SQL查询，您可能需要根据实际的数据库结构进行修改
+	query := `SELECT * FROM running_tasks_record WHERE id = $1`
+
+	rows, err := c.db.QueryContext(ctx, query, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []*constants.RunTimeTask
+	for rows.Next() {
+		var runTimeTask constants.RunTimeTask
+		var format int
+		var script string
+		if err := rows.Scan(&runTimeTask.ID, &runTimeTask.ExecutionTime, &runTimeTask.JobType,
+			&runTimeTask.JobStatus, &format, &script, &runTimeTask.RetriesLeft,
+			&runTimeTask.CronExpr, &runTimeTask.WorkerID, &runTimeTask.ExecutionID); err != nil {
+			return nil, err
+		}
+		if err != nil {
+			return nil, err
+		}
+		runTimeTask.Payload = &constants.Payload{
+			Format: format,
+			Script: script,
+		}
+		tasks = append(tasks, &runTimeTask)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}

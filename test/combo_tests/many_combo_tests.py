@@ -6,7 +6,7 @@ BASE_URL = "http://localhost:8080/api/generate"
 
 JOB_NAMES = [f"Job{i}" for i in range(1, 11)]  # 10 different job names for example
 JOB_TYPES = [0, 1]  # 0 for one-time, 1 for recurring
-CRON_EXPRS = ["* * * * *", "*/5 * * * * *", "0 0 * * *"]  # Every minute, every 5 second, every day
+CRON_EXPRS = ["* * * * *", "*/5 * * * * *"]  # Every minute, every 5 second, every day
 FORMATS = {
     0: ["echo 'Hello, World!'", "ls -l"],  # Shell
     1: ["print('Hello from Python!')", "print(sum(range(1, 10001)))"]  # Python

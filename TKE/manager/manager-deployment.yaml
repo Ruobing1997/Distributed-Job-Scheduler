@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manager
+  labels:
+    app: manager
+  namespace: supernova
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: manager
+  template:
+    metadata:
+      labels:
+        app: manager
+    spec:
+      initContainers:
+        - name: init-wait-for-postgres
+          image: busybox
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 1; done;']
+        - name: init-wait-for-redis
+          image: busybox
+          command: ['sh', '-c', 'until nc -z redis 6379; do sleep 1; done;']
+        - name: init-wait-for-worker
+          image: busybox
+          command: ['sh', '-c', 'until nc -z worker 50051; do sleep 1; done;']
+      containers:
+        - args:
+            - /app/manager
+            - start
+          name: manager
+          image: mirrors.tencent.com/supernova/supernova-repo:manager
+          resources:
+            limits:
+              cpu: 20000m
+              memory: 20000Mi
+              tke.cloud.tencent.com/eni-ip: "1"
+            requests:
+              cpu: 18000m
+              memory: 18000Mi
+              tke.cloud.tencent.com/eni-ip: "1"
+          env:
+            - name: REDIS_ADDR
+              value: "redis:6379"
+            - name: REDIS_PASSWORD
+              value: ""
+            - name: REDIS_DB
+              value: "0"
+            - name: WORKER_SERVICE
+              value: "worker"
+            - name: MANAGER_SERVICE
+              value: "manager"
+            - name: POSTGRES
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: postgres-password
+            - name: POSTGRES_URL
+              value: "host=postgres port=5432 user=postgres dbname=postgres sslmode=disable"
+          ports:
+            - containerPort: 9090
+            - containerPort: 50051

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: manager-leader-election-configmap
+data:
+  leader-lock: "manager-leader-election-lock"
+  

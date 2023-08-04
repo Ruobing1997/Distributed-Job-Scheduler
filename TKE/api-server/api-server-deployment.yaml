@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server-deployment
+  labels:
+    app: api-server
+  namespace: supernova
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-server
+  template:
+    metadata:
+      labels:
+        app: api-server
+    spec:
+      containers:
+        - image: mirrors.tencent.com/supernova/supernova-repo:api-server
+          imagePullPolicy: Always
+          name: api-server
+          resources:
+            limits:
+              cpu: 10000m
+              memory: 10000Mi
+              tke.cloud.tencent.com/eni-ip: "1"
+            requests:
+              cpu: 7000m
+              memory: 7000Mi
+              tke.cloud.tencent.com/eni-ip: "1"
+          ports:
+            - containerPort: 8080

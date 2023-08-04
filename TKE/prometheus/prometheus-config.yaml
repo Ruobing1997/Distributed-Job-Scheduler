@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: supernova
+data:
+  prometheus-config.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: 'api-server'
+        static_configs:
+          - targets: ['api-server:8080']
+      - job_name: 'manager'
+        static_configs:
+          - targets: ['manager:9090']
+      - job_name: 'worker'
+        static_configs:
+          - targets: ['worker:9797']
+      - job_name: 'kube-state-metrics'
+        static_configs:
+          - targets: ['kube-state-metrics:8080']
+      - job_name: 'node-exporter'
+        static_configs:
+          - targets: ['node-exporter:9100']

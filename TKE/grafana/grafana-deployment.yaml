@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-deployment
+  namespace: supernova
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      initContainers:
+        - name: volume-permission
+          image: busybox
+          command: ["sh", "-c", "chown -R 472:472 /var/lib/grafana/"]
+          volumeMounts:
+            - mountPath: /var/lib/grafana/
+              name: grafana-pv-docker-volume
+      securityContext:
+        fsGroup: 472
+      containers:
+        - name: grafana
+          image: grafana/grafana:latest
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - mountPath: /var/lib/grafana/
+              name: grafana-pv-docker-volume
+      volumes:
+        - name: grafana-pv-docker-volume
+          persistentVolumeClaim:
+            claimName: grafana-pvc-docker-volume

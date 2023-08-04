@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app: worker
+  namespace: supernova
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: mirrors.tencent.com/supernova/supernova-repo:worker
+          resources:
+            limits:
+              cpu: 20000m
+              memory: 20000Mi
+              tke.cloud.tencent.com/eni-ip: "1"
+            requests:
+              cpu: 18000m
+              memory: 18000Mi
+              tke.cloud.tencent.com/eni-ip: "1"
+          args:
+            - /app/executor
+            - start
+          env:
+            - name: MANAGER_SERVICE
+              value: "manager"
+            - name: POSTGRES
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: postgres-password
+            - name: POSTGRES_URL
+              value: "host=postgres port=5432 user=postgres dbname=postgres sslmode=disable"
+          ports:
+            - containerPort: 50051

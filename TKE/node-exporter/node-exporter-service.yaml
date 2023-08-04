@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-exporter
+  namespace: supernova
+  labels:
+    app: node-exporter
+spec:
+  type: ClusterIP
+  ports:
+    - name: scrape
+      port: 9100
+      targetPort: 9100
+  selector:
+    app: node-exporter

@@ -2,13 +2,22 @@ package main
 
 import (
 	"fmt"
-	"git.woa.com/robingowang/MoreFun_SuperNova/pkg/prometheus_data"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http/httputil"
 	"net/url"
+)
+
+var (
+	HttpRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_request_total",
+			Help: "Total number of http requests",
+		},
+		[]string{"method", "endpoint", "status"},
+	)
 )
 
 func setupReverseProxy(target string) gin.HandlerFunc {
@@ -19,13 +28,13 @@ func setupReverseProxy(target string) gin.HandlerFunc {
 		status := c.Writer.Status()
 		endpoint := c.Request.URL.Path
 		method := c.Request.Method
-		prometheus_data.HttpRequestsTotal.WithLabelValues(method, endpoint, fmt.Sprintf("%d", status)).Inc()
+		HttpRequestsTotal.WithLabelValues(method, endpoint, fmt.Sprintf("%d", status)).Inc()
 	}
 }
 
 func main() {
 	r := gin.Default()
-	prometheus.MustRegister(prometheus_data.HttpRequestsTotal)
+	prometheus.MustRegister(HttpRequestsTotal)
 	// Add CORS middleware
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},

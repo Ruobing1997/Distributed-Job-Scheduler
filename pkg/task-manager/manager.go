@@ -8,6 +8,7 @@ import (
 	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -103,6 +104,7 @@ func InitLeaderElection(control ServerControlInterface) {
 			OnStartedLeading: func(ctx context.Context) {
 				log.Printf("manager: %v started leading", managerID)
 				InitConnection()
+				PrometheusManagerInit()
 				go InitManagerGRPC()
 				Start()
 				control.StartAPIServer()
@@ -181,6 +183,7 @@ func addNewJobToRedis(taskDB *constants.TaskDB) {
 		taskDB.Retries,
 		taskDB.Payload)
 	taskCache.ExecutionID = generator.GenerateExecutionID()
+	redisThroughput.Inc()
 	data_structure_redis.AddJob(taskCache)
 	log.Printf("Task %v. the Q length is: %d",
 		taskCache, data_structure_redis.GetQLength())
@@ -190,6 +193,7 @@ func addNewJobToRedis(taskDB *constants.TaskDB) {
 func HandleNewTasks(name string, taskType int, cronExpression string,
 	format int, script string, callBackURL string, retries int) (string, error) {
 	log.Printf("----------------------------------")
+	tasksTotal.Inc()
 	// get update generated form generator
 	taskDB := generator.GenerateTask(name, taskType,
 		cronExpression, format, script, retries)
@@ -197,10 +201,12 @@ func HandleNewTasks(name string, taskType int, cronExpression string,
 	// insert update to database
 	log.Printf("Inserting task to full database: %s", taskDB.ID)
 	err := databaseClient.InsertTask(context.Background(), constants.TASKS_FULL_RECORD, taskDB)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "INSERT", "table": constants.TASKS_FULL_RECORD}).Inc()
 	if err != nil {
 		return "nil", err
 	}
 	// TODO: Currently only add tasks that will be executed in 10 minute, change DURATION when necessary
+	redisThroughput.Inc()
 	if data_structure_redis.CheckTasksInDuration(taskDB.ExecutionTime, DURATION) {
 		// insert update to priority queue
 		addNewJobToRedis(taskDB)
@@ -211,17 +217,22 @@ func HandleNewTasks(name string, taskType int, cronExpression string,
 func HandleDeleteTasks(taskID string) error {
 	log.Printf("----------------------------------")
 	log.Printf("Handle Delete Task")
+	tasksTotal.Dec()
 	// if the update is running, stop it
 	// check the running_tasks_record board to see the job is running or not
 	record, err := databaseClient.CountRunningTasks(context.Background(), taskID)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if record == 0 {
 		log.Printf("Task %s is not running, delete it from database, see err: %v", taskID, err)
 		// apply the same logic as the following
 		// if the update is in redis priority queue, delete it and delete it from database
 		// if the update is in database, delete it from database
 		data_structure_redis.RemoveJobByID(taskID)
+		redisThroughput.Inc()
 		err := databaseClient.DeleteByID(context.Background(), constants.TASKS_FULL_RECORD, taskID)
 		err = databaseClient.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, taskID)
+		postgresqlOpsTotal.With(prometheus.Labels{"operation": "DELETE", "table": constants.TASKS_FULL_RECORD}).Inc()
+		postgresqlOpsTotal.With(prometheus.Labels{"operation": "DELETE", "table": constants.RUNNING_JOBS_RECORD}).Inc()
 		if err != nil {
 			return err
 		} else {
@@ -236,6 +247,7 @@ func HandleDeleteTasks(taskID string) error {
 func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 	// if the task is in redis priority queue, update it and update it in database
 	data_structure_redis.RemoveJobByID(taskID)
+	redisThroughput.Inc()
 	taskCache := new(constants.TaskCache)
 	taskCache.ID = taskID
 	taskCache.Payload = &constants.Payload{}
@@ -256,6 +268,7 @@ func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 	}
 	// if the task is in database, update it in database
 	err := databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, taskID, args)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE", "table": constants.TASKS_FULL_RECORD}).Inc()
 	if err != nil {
 		return fmt.Errorf("update task %s failed: %v", taskID, err)
 	}
@@ -264,6 +277,7 @@ func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 		// insert update to priority queue
 		// 更新完按照新任务处理
 		taskCache.ExecutionID = generator.GenerateExecutionID()
+		redisThroughput.Inc()
 		data_structure_redis.AddJob(taskCache)
 	}
 	return nil
@@ -271,6 +285,7 @@ func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 
 func HandleGetTasks(taskID string) (*constants.TaskDB, error) {
 	record, err := databaseClient.GetTaskByID(context.Background(), constants.TASKS_FULL_RECORD, taskID)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.TASKS_FULL_RECORD}).Inc()
 	if err != nil {
 		return nil, err
 	}
@@ -279,6 +294,7 @@ func HandleGetTasks(taskID string) (*constants.TaskDB, error) {
 
 func HandleGetAllTasks() ([]*constants.TaskDB, error) {
 	tasks, err := databaseClient.GetAllTasks()
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.TASKS_FULL_RECORD}).Inc()
 	if err != nil {
 		return nil, err
 	}
@@ -287,6 +303,7 @@ func HandleGetAllTasks() ([]*constants.TaskDB, error) {
 
 func HandleGetRunningTasks() ([]*constants.RunTimeTask, error) {
 	tasks, err := databaseClient.GetAllRunningTasks()
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if err != nil {
 		return nil, err
 	}
@@ -295,6 +312,7 @@ func HandleGetRunningTasks() ([]*constants.RunTimeTask, error) {
 
 func HandleGetTaskHistory(taskID string) ([]*constants.RunTimeTask, error) {
 	records, err := databaseClient.GetTaskHistoryByID(context.Background(), taskID)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if err != nil {
 		return nil, err
 	}
@@ -303,6 +321,7 @@ func HandleGetTaskHistory(taskID string) ([]*constants.RunTimeTask, error) {
 
 func AddTasksFromDBWithTickers() {
 	tasks, _ := databaseClient.GetTasksInInterval(time.Now(), time.Now().Add(DURATION), timeTracker)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.TASKS_FULL_RECORD}).Inc()
 	timeTracker = time.Now()
 	for _, task := range tasks {
 		addNewJobToRedis(task)
@@ -312,6 +331,7 @@ func AddTasksFromDBWithTickers() {
 func SubscribeToRedisChannel() {
 	pubsub := redisClient.Subscribe(context.Background(), data_structure_redis.REDIS_CHANNEL)
 	_, err := pubsub.Receive(context.Background())
+	redisThroughput.Inc()
 	if err != nil {
 		log.Printf("redis subscribe failed: %v", err)
 	}
@@ -333,6 +353,7 @@ func SubscribeToRedisChannel() {
 		} else if msg.Payload == data_structure_redis.RETRY_AVAILABLE {
 			for {
 				retryTask, err := data_structure_redis.PopRetry()
+				redisThroughput.Inc()
 				if err != nil {
 					break
 				}
@@ -348,7 +369,9 @@ func SubscribeToRedisChannel() {
 }
 
 func executeMatureTasks() error {
+	dispatchTotal.Inc()
 	matureTasks := data_structure_redis.PopJobsForDispatchWithBuffer()
+	redisThroughput.Inc()
 	for _, task := range matureTasks {
 		log.Printf("dispatching task: %s with job type %s", task.ID, constants.TypeMap[task.JobType])
 		runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
@@ -358,17 +381,22 @@ func executeMatureTasks() error {
 		err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
 			runningTaskInfo)
 
+		postgresqlOpsTotal.With(prometheus.Labels{"operation": "INSERT", "table": constants.RUNNING_JOBS_RECORD}).Inc()
+
 		if err != nil {
 			return err
 		}
 
 		err = data_structure_redis.SetLeaseWithID(task.ID, task.ExecutionID, 2*time.Second)
+		redisThroughput.Inc()
 		if err != nil {
 			return err
 		}
 
 		// TODO: 可能需要放在一个goroutine里面
 		workerID, status, err := HandoutTasksForExecuting(task)
+		grpcOpsTotal.With(prometheus.Labels{"operation": "EXECUTE_TASK", "sender": managerID}).Inc()
+
 		log.Printf("dispatch task: %s and executing by %s, "+
 			"found error: %v with status %s", task.ID, workerID, err, constants.StatusMap[status])
 		if status == constants.JOBFAILED {
@@ -395,6 +423,7 @@ func handleRecurringJobAfterDispatch(task *constants.TaskCache) {
 		if data_structure_redis.CheckTasksInDuration(newExecutionTime, DURATION) {
 			// Re dispatch the task
 			task.ExecutionID = generator.GenerateExecutionID()
+			redisThroughput.Inc()
 			data_structure_redis.AddJob(task)
 		}
 	}
@@ -444,6 +473,7 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 		return "", constants.JOBFAILED,
 			fmt.Errorf("dipatched task: %s failed: %v", task.ID, err)
 	}
+
 	log.Printf("Worker: %s executed task: %s with status %s",
 		r.Id, task.ID, constants.StatusMap[int(r.Status)])
 	return r.Id, int(r.Status), nil
@@ -461,6 +491,7 @@ func MonitorHeadNode() {
 				isTaskBeingProcessed = true
 				//log.Println("Head node timer is triggered")
 				taskCache := data_structure_redis.GetNextJob()
+				redisThroughput.Inc()
 				if taskCache != nil && data_structure_redis.CheckWithinThreshold(taskCache.ExecutionTime) {
 					log.Printf("dispatching task: %s through Monitor Trigger",
 						taskCache.ID)
@@ -491,6 +522,7 @@ func handleRescheduleFailedJob(task *constants.TaskCache) error {
 	// update not completely failed, update the retries left, time
 	// and add to redis priority queue
 	err := data_structure_redis.RemoveLeaseWithID(task.ID, task.ExecutionID)
+	redisThroughput.Inc()
 	if err != nil {
 		return err
 	}
@@ -505,13 +537,18 @@ func handleRescheduleFailedJob(task *constants.TaskCache) error {
 func handleCompletelyFailedJob(task *constants.TaskCache, jobStatusCode int) error {
 	// update completely failed need to update all information for report user.
 	err := data_structure_redis.RemoveLeaseWithID(task.ID, task.ExecutionID)
+	redisThroughput.Inc()
 	// update the task according to task execution id.
 	err = databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD,
 		task.ID, map[string]interface{}{
 			"job_status":              jobStatusCode,
 			"update_time":             time.Now(),
 			"previous_execution_time": task.ExecutionTime,
-		})
+		},
+	)
+
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE", "table": constants.TASKS_FULL_RECORD}).Inc()
+
 	if err != nil {
 		return err
 	}
@@ -535,13 +572,17 @@ func RescheduleFailedJobs(task *constants.TaskCache) error {
 		return err
 	}
 
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE", "table": constants.RUNNING_JOBS_RECORD}).Inc()
+
 	task.RetriesLeft = curRetries
 	// 此时执行ID不应该发生变化，因为是同一个job的重试逻辑
 	data_structure_redis.AddRetry(task)
+	redisThroughput.Inc()
 	return nil
 }
 
 func checkJobCompletelyFailed(data interface{}) bool {
+	failedTasksTotal.Inc()
 	jobType, retriesLeft, executionTime := getJobInfo(data)
 	if jobType == constants.OneTime {
 		if checkOneTimeJobOutdated(executionTime) {
@@ -605,6 +646,9 @@ func HandleUnRenewLeaseJobThroughDB(id string) error {
 	// if job type is recur, check retry times
 	// if > 0, reenter queue, update redis, db; otherwise return fail
 	record, err := databaseClient.GetTaskByID(context.Background(), constants.RUNNING_JOBS_RECORD, id)
+
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.RUNNING_JOBS_RECORD}).Inc()
+
 	if err != nil {
 		log.Printf("Get task by id failed when handle renew lease jobs: %v", err)
 		return err
@@ -616,6 +660,9 @@ func HandleUnRenewLeaseJobThroughDB(id string) error {
 		}
 		err = databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD,
 			runTimeTask.ID, map[string]interface{}{"job_status": constants.JOBFAILED})
+
+		postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE", "table": constants.TASKS_FULL_RECORD}).Inc()
+
 		if err != nil {
 			return err
 		}
@@ -650,6 +697,7 @@ func getJobInfo(data interface{}) (int, int, time.Time) {
 }
 
 func ListenForExpiryNotifications() {
+	redisThroughput.Inc()
 	pubsub := redisClient.Subscribe(context.Background(), REDIS_EXPIRY_CHANNEL)
 	defer pubsub.Close()
 
@@ -665,15 +713,19 @@ func ListenForExpiryNotifications() {
 
 func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 	in *pb.NotifyMessageRequest) (*pb.NotifyMessageResponse, error) {
+
 	log.Printf("-------------------------------------")
 	log.Printf("In notifying, Received Task: %s with Status %s from worker %s with exec id: %s",
 		in.TaskId, constants.StatusMap[int(in.Status)], in.WorkerId, in.ExecId)
 	err := data_structure_redis.RemoveLeaseWithID(in.TaskId, in.ExecId)
+	redisThroughput.Inc()
 	if err != nil {
 		log.Printf("remove lease failed: %v", err)
 	}
 
 	record, err := databaseClient.GetTaskByID(ctx, constants.RUNNING_JOBS_RECORD, in.ExecId)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.RUNNING_JOBS_RECORD}).Inc()
+
 	log.Printf("Get task: %v", record)
 	if err != nil {
 		return &pb.NotifyMessageResponse{Success: false},
@@ -693,10 +745,12 @@ func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 	if in.Status == int32(constants.JOBSUCCEED) {
 		log.Printf("Job SUCCEED with task id: %s and exeution id: %s from worker: %s",
 			in.TaskId, in.ExecId, in.WorkerId)
+		succeedTasksTotal.Inc()
 		handleJobSucceed(taskCache)
 	} else {
 		log.Printf("Job FAILED with task id: %s and exeution id: %s from worker: %s",
 			in.TaskId, in.ExecId, in.WorkerId)
+
 		handleJobFailed(taskCache, constants.JOBFAILED)
 	}
 
@@ -722,10 +776,13 @@ func handleOneTimeJobSucceed(task *constants.TaskCache) error {
 	}
 	err := databaseClient.UpdateByID(context.Background(),
 		constants.TASKS_FULL_RECORD, task.ID, updateVars)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE", "table": constants.TASKS_FULL_RECORD}).Inc()
+
 	if err != nil {
 		return err
 	}
 	err = data_structure_redis.RemoveLeaseWithID(task.ID, task.ExecutionID)
+	redisThroughput.Inc()
 	if err != nil {
 		return err
 	}
@@ -744,6 +801,8 @@ func handleRecurringJobSucceed(task *constants.TaskCache) error {
 		"previous_execution_time": task.ExecutionTime,
 	}
 	err := databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, task.ID, updateVars)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE", "table": constants.TASKS_FULL_RECORD}).Inc()
+
 	if err != nil {
 		return err
 	}
@@ -756,6 +815,7 @@ func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (
 		in.Id, in.ExecId)
 	err := data_structure_redis.SetLeaseWithID(in.Id, in.ExecId,
 		in.LeaseDuration.AsDuration())
+	redisThroughput.Inc()
 	if err != nil {
 		return &pb.RenewLeaseResponse{Success: false},
 			fmt.Errorf("lease for update %s has expired", in.Id)

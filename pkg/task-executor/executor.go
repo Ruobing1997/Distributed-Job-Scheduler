@@ -7,6 +7,7 @@ import (
 	pb "git.woa.com/robingowang/MoreFun_SuperNova/pkg/strategy/dispatch/proto"
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"io"
@@ -41,6 +42,8 @@ func Init() {
 
 	databaseClient = postgreSQL.NewpostgreSQLClient()
 	log.Printf("database set up done")
+
+	PrometheusManagerInit()
 }
 
 type ServerImpl struct {
@@ -62,6 +65,7 @@ func InitWorkerGRPC() {
 }
 
 func ExecuteTask(task *constants.TaskCache) (string, error) {
+	tasksTotal.Inc()
 	log.Printf("-------------------------------------------------------")
 	log.Printf("Received task with payload: format: %d, content: %s",
 		task.Payload.Format, task.Payload.Script)
@@ -72,6 +76,7 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 			"job_status": constants.JOBRUNNING,
 			"worker_id":  workerID,
 		})
+	postgresqlOpsTotal.With(prometheus.Labels{"method": "UPDATE", "table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if err != nil {
 		log.Fatalf("insert task: %s with Execution ID: %s "+
 			"into database failed: %v", task.ID, task.ExecutionID, err)
@@ -95,19 +100,25 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 			err = executeEmail(task.Payload.Script)
 		}
 		if err != nil {
+			tasksFailedTotal.Inc()
 			log.Printf("Task: %s failed with error: %v", task.ID, err)
 			err = databaseClient.UpdateByExecutionID(context.Background(),
 				constants.RUNNING_JOBS_RECORD, task.ExecutionID,
 				map[string]interface{}{"job_status": constants.JOBFAILED})
+			postgresqlOpsTotal.With(prometheus.Labels{"method": "UPDATE",
+				"table": constants.RUNNING_JOBS_RECORD}).Inc()
 			if err != nil {
 				notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBFAILED)
 				return
 			}
 			notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBFAILED)
 		} else {
+			tasksSuccessTotal.Inc()
 			err = databaseClient.UpdateByExecutionID(context.Background(),
 				constants.RUNNING_JOBS_RECORD, task.ExecutionID,
 				map[string]interface{}{"job_status": constants.JOBSUCCEED})
+			postgresqlOpsTotal.With(prometheus.Labels{"method": "UPDATE",
+				"table": constants.RUNNING_JOBS_RECORD}).Inc()
 			if err != nil {
 				notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBFAILED)
 				log.Fatalf("update task execid: %s failed: %v",
@@ -121,6 +132,7 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 }
 
 func notifyManagerTaskResult(taskID string, execID string, jobStatus int) {
+	grpcOpsTotal.With(prometheus.Labels{"method": "Notify", "sender": workerID}).Inc()
 	managerService := os.Getenv("MANAGER_SERVICE")
 	if managerService == "" {
 		managerService = MANAGER_SERVICE
@@ -172,6 +184,7 @@ func MonitorLease(ctx context.Context, taskId string, execID string) {
 }
 
 func RenewLease(taskID string, execID string, duration time.Duration) (bool, error) {
+	grpcOpsTotal.With(prometheus.Labels{"method": "RenewLease", "sender": workerID}).Inc()
 	managerService := os.Getenv("MANAGER_SERVICE")
 	if managerService == "" {
 		managerService = MANAGER_SERVICE

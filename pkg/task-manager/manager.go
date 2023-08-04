@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -126,7 +127,10 @@ func InitLeaderElection(control ServerControlInterface) {
 			OnStartedLeading: func(ctx context.Context) {
 				logger.WithFields(logrus.Fields{
 					"function": "InitLeaderElection",
+					"manager":  managerID,
+					"PodIP":    os.Getenv("POD_IP"),
 				}).Info(fmt.Sprintf("manager: %v started leading", managerID))
+				updateEndpointsWithLeaderIP(os.Getenv("POD_IP"))
 				InitConnection()
 				PrometheusManagerInit()
 				go InitManagerGRPC()
@@ -143,21 +147,21 @@ func InitLeaderElection(control ServerControlInterface) {
 					logger.WithFields(logrus.Fields{
 						"function": "OnStoppedLeading",
 						"error":    err,
-					}).Fatal("Error closing database client")
+					}).Error("Error closing database client")
 				}
 
 				if err := redisClient.Close(); err != nil {
 					logger.WithFields(logrus.Fields{
 						"function": "OnStoppedLeading",
 						"error":    err,
-					}).Fatal("Error closing redis client")
+					}).Error("Error closing redis client")
 				}
 
 				if err := control.StopAPIServer(); err != nil {
 					logger.WithFields(logrus.Fields{
 						"function": "OnStoppedLeading",
 						"error":    err,
-					}).Fatal("Error stopping API server")
+					}).Error("Error stopping API server")
 				}
 			},
 			OnNewLeader: func(identity string) {
@@ -234,6 +238,50 @@ func addNewJobToRedis(taskDB *constants.TaskDB) {
 	}).Info("added new job to redis")
 }
 
+func updateEndpointsWithLeaderIP(podIP string) {
+	// 创建 Kubernetes 客户端
+	config, _ := rest.InClusterConfig()
+	clientset, _ := kubernetes.NewForConfig(config)
+	endpointsClient := clientset.CoreV1().Endpoints("supernova")
+	currentEndpoints, err := endpointsClient.Get(context.TODO(), "manager", metav1.GetOptions{})
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"function": "updateEndpointsWithLeaderIP",
+			"error":    err,
+		}).Errorf("failed to get endpoints")
+		return
+	}
+
+	currentEndpoints.Subsets = []v1.EndpointSubset{
+		{
+			Addresses: []v1.EndpointAddress{
+				{
+					IP: podIP,
+				},
+			},
+			Ports: []v1.EndpointPort{
+				{
+					Name: "9090",
+					Port: 9090,
+				},
+				{
+					Name: "grpc",
+					Port: 50051,
+				},
+			},
+		},
+	}
+
+	_, err = endpointsClient.Update(context.TODO(), currentEndpoints, metav1.UpdateOptions{})
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"function": "updateEndpointsWithLeaderIP",
+			"error":    err,
+		}).Errorf("failed to update endpoints")
+		return
+	}
+}
+
 // HandleNewTasks handles new tasks from API,  这里应该是入口函数。主要做创建任务的逻辑
 func HandleNewTasks(name string, taskType int, cronExpression string,
 	format int, script string, callBackURL string, retries int) (string, error) {
@@ -272,7 +320,7 @@ func HandleDeleteTasks(taskID string) error {
 	logger.WithFields(logrus.Fields{
 		"function": "HandleDeleteTasks",
 		"error":    err,
-	}).Fatal("Error counting running tasks")
+	}).Info("Error counting running tasks")
 	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if record == 0 {
 		logger.WithFields(logrus.Fields{
@@ -616,7 +664,7 @@ func MonitorHeadNode() {
 						logger.WithFields(logrus.Fields{
 							"function": "MonitorHeadNode",
 							"error":    err,
-						}).Fatal("execute mature tasks failed")
+						}).Error("execute mature tasks failed")
 					}
 				}
 				isTaskBeingProcessed = false

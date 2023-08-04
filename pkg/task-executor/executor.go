@@ -189,7 +189,7 @@ func notifyManagerTaskResult(taskID string, execID string, jobStatus int) {
 			"function":    "notifyManagerTaskResult",
 			"taskID":      taskID,
 			"executionID": execID,
-		}).Fatalf("could not notify manager task result: %v", err)
+		}).Errorf("could not notify manager task result: %v", err)
 		return
 	}
 
@@ -250,7 +250,7 @@ func RenewLease(taskID string, execID string, duration time.Duration) (bool, err
 			"function":    "RenewLease",
 			"taskID":      taskID,
 			"executionID": execID,
-		}).Fatalf("did not connect: %v", err)
+		}).Errorf("did not connect: %v", err)
 	}
 	defer conn.Close()
 	client := pb.NewLeaseServiceClient(conn)

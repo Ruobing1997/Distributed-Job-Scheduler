@@ -51,6 +51,10 @@ spec:
                   key: postgres-password
             - name: POSTGRES_URL
               value: "host=postgres port=5432 user=postgres dbname=postgres sslmode=disable"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
           ports:
             - containerPort: 9090
             - containerPort: 50051

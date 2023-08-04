@@ -8,10 +8,10 @@ import (
 	generator "git.woa.com/robingowang/MoreFun_SuperNova/pkg/task-generator"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"io"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -21,6 +21,7 @@ import (
 var (
 	workerID       = os.Getenv("HOSTNAME")
 	databaseClient *postgreSQL.Client
+	logger         = logrus.New()
 )
 
 type Result struct {
@@ -32,16 +33,22 @@ func Init() {
 	logFile, err := os.OpenFile("./logs/workers/worker-"+workerID+".log",
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatalf("error opening file: %v", err)
+		logger.WithFields(logrus.Fields{
+			"function": "Init",
+			"workerID": workerID,
+		}).Errorf("Failed to open log file: %v", err)
 	}
 
 	multiWrite := io.MultiWriter(os.Stdout, logFile)
-	log.SetOutput(multiWrite)
-
-	log.Printf("Task Executor and its grpc server are initialized")
+	logger.SetOutput(multiWrite)
+	logger.WithFields(logrus.Fields{
+		"function": "Init",
+	}).Info("Task Executor and its grpc server are initialized")
 
 	databaseClient = postgreSQL.NewpostgreSQLClient()
-	log.Printf("database set up done")
+	logger.WithFields(logrus.Fields{
+		"function": "Init",
+	}).Info("database client is initialized")
 
 	PrometheusManagerInit()
 }
@@ -54,21 +61,27 @@ type ServerImpl struct {
 func InitWorkerGRPC() {
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		logger.WithFields(logrus.Fields{
+			"function": "InitWorkerGRPC",
+		}).Fatalf("failed to listen: %v", err)
 	}
 	s := grpc.NewServer()
 	pb.RegisterTaskServiceServer(s, &ServerImpl{})
 	pb.RegisterLeaseServiceServer(s, &ServerImpl{})
 	if err := s.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+		logger.WithFields(logrus.Fields{
+			"function": "InitWorkerGRPC",
+		}).Fatalf("failed to serve: %v", err)
 	}
 }
 
 func ExecuteTask(task *constants.TaskCache) (string, error) {
 	tasksTotal.Inc()
-	log.Printf("-------------------------------------------------------")
-	log.Printf("Received task with payload: format: %d, content: %s",
-		task.Payload.Format, task.Payload.Script)
+	logger.WithFields(logrus.Fields{
+		"function":    "ExecuteTask",
+		"taskID":      task.ID,
+		"executionID": task.ExecutionID,
+	}).Infof("Received task with payload: format: %d, content: %s", task.Payload.Format, task.Payload.Script)
 	var err error
 	err = databaseClient.UpdateByExecutionID(context.Background(),
 		constants.RUNNING_JOBS_RECORD, task.ExecutionID,
@@ -78,13 +91,19 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 		})
 	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE", "table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if err != nil {
-		log.Fatalf("insert task: %s with Execution ID: %s "+
-			"into database failed: %v", task.ID, task.ExecutionID, err)
+		logger.WithFields(logrus.Fields{
+			"function":    "ExecuteTask",
+			"taskID":      task.ID,
+			"executionID": task.ExecutionID,
+		}).Errorf("insert task: %s with Execution ID: %s into database failed: %v", task.ID, task.ExecutionID, err)
 		return workerID, err
 	}
 	go func() {
-		log.Printf("-------------------------------------------------------")
-		log.Printf("Start Executing Task: %s", task.ID)
+		logger.WithFields(logrus.Fields{
+			"function":    "ExecuteTask",
+			"taskID":      task.ID,
+			"executionID": task.ExecutionID,
+		}).Infof("Start Executing Task: %s", task.ID)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -101,7 +120,11 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 		}
 		if err != nil {
 			tasksFailedTotal.Inc()
-			log.Printf("Task: %s failed with error: %v", task.ID, err)
+			logger.WithFields(logrus.Fields{
+				"function":    "ExecuteTask",
+				"taskID":      task.ID,
+				"executionID": task.ExecutionID,
+			}).Infof("Task: %s failed with error: %v", task.ID, err)
 			err = databaseClient.UpdateByExecutionID(context.Background(),
 				constants.RUNNING_JOBS_RECORD, task.ExecutionID,
 				map[string]interface{}{"job_status": constants.JOBFAILED})
@@ -121,8 +144,11 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 				"table": constants.RUNNING_JOBS_RECORD}).Inc()
 			if err != nil {
 				notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBFAILED)
-				log.Fatalf("update task execid: %s failed: %v",
-					task.ExecutionID, err)
+				logger.WithFields(logrus.Fields{
+					"function":    "ExecuteTask",
+					"taskID":      task.ID,
+					"executionID": task.ExecutionID,
+				}).Errorf("update task execid: %s failed: %v", task.ExecutionID, err)
 			} else {
 				notifyManagerTaskResult(task.ID, task.ExecutionID, constants.JOBSUCCEED)
 			}
@@ -139,7 +165,11 @@ func notifyManagerTaskResult(taskID string, execID string, jobStatus int) {
 	}
 	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		log.Fatalf("did not connect: %v", err)
+		logger.WithFields(logrus.Fields{
+			"function":    "notifyManagerTaskResult",
+			"taskID":      taskID,
+			"executionID": execID,
+		}).Errorf("did not connect: %v", err)
 	}
 	defer conn.Close()
 	client := pb.NewTaskServiceClient(conn)
@@ -155,16 +185,27 @@ func notifyManagerTaskResult(taskID string, execID string, jobStatus int) {
 	})
 
 	if err != nil {
-		log.Printf("could not notify manager task result: %v", err)
+		logger.WithFields(logrus.Fields{
+			"function":    "notifyManagerTaskResult",
+			"taskID":      taskID,
+			"executionID": execID,
+		}).Fatalf("could not notify manager task result: %v", err)
 		return
 	}
 
-	log.Printf("Task: %s notify manager task result: %v", taskID, success.Success)
+	logger.WithFields(logrus.Fields{
+		"function":    "notifyManagerTaskResult",
+		"taskID":      taskID,
+		"executionID": execID,
+	}).Infof("Task: %s notify manager task result: %v", taskID, success.Success)
 }
 
 func MonitorLease(ctx context.Context, taskId string, execID string) {
-	log.Printf("-------------------------------------------------------")
-	log.Printf("execID: %s is monitoring lease for update: %s", execID, taskId)
+	logger.WithFields(logrus.Fields{
+		"function":    "MonitorLease",
+		"taskID":      taskId,
+		"executionID": execID,
+	}).Infof("execID: %s is monitoring lease for task: %s", execID, taskId)
 	ticker := time.NewTicker(constants.LEASE_RENEW_INTERVAL)
 	defer ticker.Stop()
 
@@ -173,10 +214,18 @@ func MonitorLease(ctx context.Context, taskId string, execID string) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			log.Printf("execID: %s is renewing lease for update: %s", execID, taskId)
+			logger.WithFields(logrus.Fields{
+				"function":    "MonitorLease",
+				"taskID":      taskId,
+				"executionID": execID,
+			}).Infof("execID: %s is RENEWING lease for task: %s", execID, taskId)
 			err := WorkerRenewLease(taskId, execID, constants.LEASE_DURATION)
 			if err != nil {
-				log.Printf("failed to renew lease for update execID %s: %v", execID, err)
+				logger.WithFields(logrus.Fields{
+					"function":    "MonitorLease",
+					"taskID":      taskId,
+					"executionID": execID,
+				}).Errorf("failed to renew lease for update execID %s: %v", execID, err)
 			}
 		}
 	}
@@ -184,6 +233,12 @@ func MonitorLease(ctx context.Context, taskId string, execID string) {
 }
 
 func RenewLease(taskID string, execID string, duration time.Duration) (bool, error) {
+	logger.WithFields(logrus.Fields{
+		"function":    "RenewLease",
+		"taskID":      taskID,
+		"executionID": execID,
+	}).Infof("execID: %s is RENEWING lease for task: %s", execID, taskID)
+
 	grpcOpsTotal.With(prometheus.Labels{"method": "RenewLease", "sender": workerID}).Inc()
 	managerService := os.Getenv("MANAGER_SERVICE")
 	if managerService == "" {
@@ -191,7 +246,11 @@ func RenewLease(taskID string, execID string, duration time.Duration) (bool, err
 	}
 	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		log.Fatalf("did not connect: %v", err)
+		logger.WithFields(logrus.Fields{
+			"function":    "RenewLease",
+			"taskID":      taskID,
+			"executionID": execID,
+		}).Fatalf("did not connect: %v", err)
 	}
 	defer conn.Close()
 	client := pb.NewLeaseServiceClient(conn)
@@ -246,7 +305,10 @@ func executeScript(scriptContent string, scriptType int) error {
 		return fmt.Errorf("%s script execution failed: %v, output: %s",
 			constants.PayloadTypeMap[scriptType], err, output)
 	}
-	log.Printf("%s script executed successfully: %s", constants.PayloadTypeMap[scriptType], output)
+
+	logger.WithFields(logrus.Fields{
+		"function": "executeScript",
+	}).Infof("%s script executed successfully: %s", constants.PayloadTypeMap[scriptType], output)
 	return nil
 }
 
@@ -255,12 +317,19 @@ func executeEmail(emailInfo string) error {
 	// For example, you can use a package like "net/smtp" to send emails in Go
 	// For simplicity, I'm just printing the emailInfo,
 	// and this can be used to test bad cases
-	log.Printf("Sending email with info: %s", emailInfo)
+	logger.WithFields(logrus.Fields{
+		"function": "executeEmail",
+	}).Infof("Sending email with info: %s NOT IMPLEMENTED YET", emailInfo)
 
 	return fmt.Errorf("email not implemented yet")
 }
 
 func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.TaskResponse, error) {
+	logger.WithFields(logrus.Fields{
+		"function":    "ExecuteTask-GRPC",
+		"taskID":      in.Id,
+		"executionID": in.ExecId,
+	}).Infof("execID: %s is executing task: %s", in.ExecId, in.Id)
 	payload := generator.GeneratePayload(int(in.Payload.Format), in.Payload.Script)
 	task := &constants.TaskCache{
 		ID:            in.Id,
@@ -272,7 +341,17 @@ func (s *ServerImpl) ExecuteTask(ctx context.Context, in *pb.TaskRequest) (*pb.T
 
 	workerID, err := ExecuteTask(task)
 	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"function":    "ExecuteTask-GRPC",
+			"taskID":      in.Id,
+			"executionID": in.ExecId,
+		}).Infof("execID: %s failed to execute task: %s", in.ExecId, in.Id)
 		return &pb.TaskResponse{Id: workerID, Status: constants.JOBFAILED}, err
 	}
+	logger.WithFields(logrus.Fields{
+		"function":    "ExecuteTask-GRPC",
+		"taskID":      in.Id,
+		"executionID": in.ExecId,
+	}).Infof("execID: %s successfully executed task: %s", in.ExecId, in.Id)
 	return &pb.TaskResponse{Id: workerID, Status: constants.JOBDISPATCHED}, nil
 }

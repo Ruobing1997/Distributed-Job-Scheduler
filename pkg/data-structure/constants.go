@@ -18,4 +18,4 @@ const REDIS_LEASE_MAP_VALUE_PROCESSING = "1"
 
 // TODO: add ahead time after testing
 const PROXIMITY_THRESHOLD = 2 * time.Second
-const DISPATCHBUFFER = 0 // 100ms ahead to dispatch tasks
+const DISPATCHBUFFER = 500 * time.Millisecond // 100ms ahead to dispatch tasks

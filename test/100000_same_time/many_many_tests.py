@@ -2,7 +2,7 @@ import requests
 import threading
 
 BASE_URL = "http://localhost:8080/api/generate"
-TOTAL_REQUESTS = 2
+TOTAL_REQUESTS = 1500
 
 def send_request(job_name):
     headers = {
@@ -12,18 +12,9 @@ def send_request(job_name):
     data = {
         "jobName": job_name,
         "jobType": 1,  # Assuming you want the 'Recur' option
-        "cronExpr": "* * * * *",
+        "cronExpr": "* * * * * *",
         "format": 1,  # Python
-        "script": '''
-import time
-start_time = time.time()
-total = 0
-for i in range(1, 10000001):
-    total += i
-end_time = time.time()
-print("The sum of 1 to 10000000 is:", total)
-print("Execution time:", end_time - start_time, "seconds")
-''',
+        "script": 'print("Hello World!")',
         "retries": 3
     }
 

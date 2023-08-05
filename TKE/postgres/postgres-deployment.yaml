@@ -28,6 +28,15 @@ spec:
                   key: postgres-password
             - name: POSTGRES_DB
               value: "postgres"
+          resources:
+            limits:
+              cpu: 20000m
+              memory: 20000Mi
+              tke.cloud.tencent.com/eni-ip: "1"
+            requests:
+              cpu: 18000m
+              memory: 18000Mi
+              tke.cloud.tencent.com/eni-ip: "1"
           volumeMounts:
             - name: postgres-init
               mountPath: /docker-entrypoint-initdb.d/init.sql

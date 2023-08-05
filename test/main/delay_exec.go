@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"time"
 )
 
 const (
-	BASE_URL         = "http://localhost:8080/api/generate"
-	TOTAL_REQUESTS   = 1000
+	BASE_URL         = "http://9.135.85.132:8080/api/generate"
+	TOTAL_REQUESTS   = 15000
 	DELAY_IN_MINUTES = 3
 )
 
@@ -34,13 +33,13 @@ func sendRequest(jobName string, wg *sync.WaitGroup) {
 	client := &http.Client{}
 
 	// Calculate cron expression for DELAY_IN_MINUTES later
-	futureTime := time.Now().Add(time.Duration(DELAY_IN_MINUTES) * time.Minute)
-	cronExpr := fmt.Sprintf("%d %d * * *", futureTime.Minute(), futureTime.Hour())
+	//futureTime := time.Now().Add(time.Duration(DELAY_IN_MINUTES) * time.Minute)
+	//cronExpr := fmt.Sprintf("%d %d * * *", futureTime.Minute(), futureTime.Hour())
 
 	data := JobData{
 		JobName:  jobName,
 		JobType:  1,
-		CronExpr: cronExpr,
+		CronExpr: "* * * * * *",
 		Format:   1,
 		Script:   `print("hello world")`,
 		Retries:  3,

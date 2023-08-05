@@ -20,12 +20,12 @@ spec:
           image: mirrors.tencent.com/supernova/supernova-repo:worker
           resources:
             limits:
-              cpu: 20000m
-              memory: 20000Mi
+              cpu: 10000m
+              memory: 10000Mi
               tke.cloud.tencent.com/eni-ip: "1"
             requests:
-              cpu: 18000m
-              memory: 18000Mi
+              cpu: 8000m
+              memory: 8000Mi
               tke.cloud.tencent.com/eni-ip: "1"
           args:
             - /app/executor

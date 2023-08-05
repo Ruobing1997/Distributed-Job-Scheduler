@@ -33,12 +33,12 @@ spec:
           image: mirrors.tencent.com/supernova/supernova-repo:manager
           resources:
             limits:
-              cpu: 20000m
-              memory: 20000Mi
+              cpu: 15000m
+              memory: 15000Mi
               tke.cloud.tencent.com/eni-ip: "1"
             requests:
-              cpu: 18000m
-              memory: 18000Mi
+              cpu: 10000m
+              memory: 10000Mi
               tke.cloud.tencent.com/eni-ip: "1"
           env:
             - name: REDIS_ADDR

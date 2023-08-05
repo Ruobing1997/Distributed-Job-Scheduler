@@ -25,6 +25,15 @@ spec:
       containers:
         - name: grafana
           image: grafana/grafana:latest
+          resources:
+            limits:
+              cpu: 1500m
+              memory: 1500Mi
+              tke.cloud.tencent.com/eni-ip: "1"
+            requests:
+              cpu: 1100m
+              memory: 1100Mi
+              tke.cloud.tencent.com/eni-ip: "1"
           ports:
             - containerPort: 3000
           volumeMounts:

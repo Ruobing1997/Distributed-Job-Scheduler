@@ -9,7 +9,6 @@ const REDIS_PQ_KEY = "task_queue"
 const REDIS_RETRY_KEY = "retry_task_set"
 const REDIS_MAP_KEY = "task_map"
 const REDIS_CHANNEL = "near_execution_tasks"
-const TASK_AVAILABLE = "task_available"
 const RETRY_AVAILABLE = "retry_available"
 
 const REDIS_LEASE_MAP = "task_lease_map"

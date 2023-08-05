@@ -24,7 +24,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -34,9 +33,6 @@ var (
 	redisClient    *redis.Client
 	managerID      = os.Getenv("HOSTNAME")
 	logger         = logrus.New()
-	busyMutex      sync.Mutex
-	isBusy         atomic.Value
-	lastTaskTime   atomic.Value
 	connPool       []*grpc.ClientConn
 	poolMutex      sync.Mutex
 )
@@ -133,8 +129,6 @@ func InitLeaderElection(control ServerControlInterface) {
 					"manager":  managerID,
 					"PodIP":    os.Getenv("POD_IP"),
 				}).Info(fmt.Sprintf("manager: %v started leading", managerID))
-				setBusyStatus(false)
-				lastTaskTime.Store(time.Now())
 				updateEndpointsWithLeaderIP(os.Getenv("POD_IP"))
 				InitConnection()
 				PrometheusManagerInit()
@@ -285,18 +279,6 @@ func updateEndpointsWithLeaderIP(podIP string) {
 		}).Errorf("failed to update endpoints")
 		return
 	}
-}
-
-func setBusyStatus(status bool) {
-	busyMutex.Lock()
-	defer busyMutex.Unlock()
-	isBusy.Store(status)
-}
-
-func getBusyStatus() bool {
-	busyMutex.Lock()
-	defer busyMutex.Unlock()
-	return isBusy.Load().(bool)
 }
 
 // HandleNewTasks handles new tasks from API,  这里应该是入口函数。主要做创建任务的逻辑
@@ -493,34 +475,7 @@ func SubscribeToRedisChannel() {
 	}
 	ch := pubsub.Channel()
 	for msg := range ch {
-		if msg.Payload == data_structure_redis.TASK_AVAILABLE {
-			logger.WithFields(logrus.Fields{
-				"function": "SubscribeToRedisChannel",
-			}).Infof("task available")
-
-			if getBusyStatus() {
-				logger.WithFields(logrus.Fields{
-					"function": "SubscribeToRedisChannel",
-				}).Infof("task is being processed, skip")
-				continue
-			}
-
-			setBusyStatus(true)
-			// check redis priority queue and dispatch tasks
-			tasks := data_structure_redis.PopJobsForDispatchWithBuffer()
-			redisThroughput.Add(float64(len(tasks)))
-			for _, task := range tasks {
-				go handleTask(task)
-			}
-			if err != nil {
-				logger.WithFields(logrus.Fields{
-					"function": "SubscribeToRedisChannel",
-				}).Errorf("dispatch tasks failed: %v", err)
-			}
-			time.Sleep(100 * time.Millisecond)
-			setBusyStatus(false)
-
-		} else if msg.Payload == data_structure_redis.RETRY_AVAILABLE {
+		if msg.Payload == data_structure_redis.RETRY_AVAILABLE {
 			for {
 				retryTask, err := data_structure_redis.PopRetry()
 				redisThroughput.Inc()
@@ -710,26 +665,16 @@ func MonitorHeadNode() {
 	}).Info("Start monitoring head node")
 
 	for {
-		if getBusyStatus() {
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
 		headNode := data_structure_redis.GetNextJob()
 		if headNode != nil && data_structure_redis.CheckWithinThreshold(headNode.ExecutionTime) {
-			setBusyStatus(true)
-			lastTaskTime.Store(time.Now())
 			tasks := data_structure_redis.PopJobsForDispatchWithBuffer()
 			redisThroughput.Add(float64(len(tasks)))
 			for _, task := range tasks {
 				go handleTask(task)
 			}
-			// 让它休息一下
-			time.Sleep(10 * time.Millisecond)
-		} else {
-			if time.Since(lastTaskTime.Load().(time.Time)) > constants.HEADNODE_IDLE_TIMEOUT {
-				setBusyStatus(false)
-			}
 		}
+		// 让它休息一下
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

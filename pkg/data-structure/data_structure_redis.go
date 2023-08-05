@@ -70,10 +70,6 @@ func AddJob(e *constants.TaskCache) {
 	client.ZAdd(context.Background(), REDIS_PQ_KEY, z)
 	Qlen++
 	client.HSet(context.Background(), REDIS_MAP_KEY, e.ID, data)
-
-	if CheckWithinThreshold(e.ExecutionTime) {
-		client.Publish(context.Background(), REDIS_CHANNEL, TASK_AVAILABLE)
-	}
 }
 
 func AddRetry(e *constants.TaskCache) {

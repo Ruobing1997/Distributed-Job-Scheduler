@@ -207,8 +207,9 @@ func GetJobsForDispatchWithBuffer() []*constants.TaskCache {
 func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 	adjustedTime := time.Now().Add(DISPATCHBUFFER)
 	var scoreRange = &redis.ZRangeBy{
-		Min: "-inf",
-		Max: fmt.Sprintf("%d", adjustedTime.Unix()),
+		Min:   "-inf",
+		Max:   fmt.Sprintf("%d", adjustedTime.Unix()),
+		Count: constants.BATCH_SIZE,
 	}
 	results, err := client.ZRangeByScoreWithScores(context.Background(), REDIS_PQ_KEY, scoreRange).Result()
 	if err != nil {
@@ -216,16 +217,20 @@ func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 	}
 
 	var matureTasks []*constants.TaskCache
+	var taskIDs []string
+
 	for _, result := range results {
 		var e constants.TaskCache
 		if err := json.Unmarshal([]byte(result.Member.(string)), &e); err != nil {
 			log.Printf("unmarshal update cache failed: %v", err)
 		}
-		client.ZRem(context.Background(), REDIS_PQ_KEY, result.Member)
-		client.HDel(context.Background(), REDIS_MAP_KEY, e.ID)
-		Qlen--
+		taskIDs = append(taskIDs, e.ID)
 		matureTasks = append(matureTasks, &e)
 	}
+	client.ZRemRangeByScore(context.Background(), REDIS_PQ_KEY, scoreRange.Min, scoreRange.Max)
+	client.HDel(context.Background(), REDIS_MAP_KEY, taskIDs...)
+	Qlen -= int64(len(taskIDs))
+
 	return matureTasks
 }
 

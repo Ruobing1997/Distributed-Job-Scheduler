@@ -24,18 +24,21 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 var (
-	timeTracker          time.Time
-	databaseClient       *postgreSQL.Client
-	redisClient          *redis.Client
-	testMessageChannel   = make(chan string)
-	isTaskBeingProcessed bool
-	taskProcessingLock   sync.Mutex
-	managerID            = os.Getenv("HOSTNAME")
-	logger               = logrus.New()
+	timeTracker        time.Time
+	databaseClient     *postgreSQL.Client
+	redisClient        *redis.Client
+	testMessageChannel = make(chan string)
+	managerID          = os.Getenv("HOSTNAME")
+	logger             = logrus.New()
+	isBusy             atomic.Value
+	lastTaskTime       atomic.Value
+	connPool           []*grpc.ClientConn
+	poolMutex          sync.Mutex
 )
 
 type ServerImpl struct {
@@ -477,19 +480,25 @@ func SubscribeToRedisChannel() {
 	ch := pubsub.Channel()
 	for msg := range ch {
 		if msg.Payload == data_structure_redis.TASK_AVAILABLE {
-			taskProcessingLock.Lock()
-			if !isTaskBeingProcessed {
-				isTaskBeingProcessed = true
-				// check redis priority queue and dispatch tasks
-				err := executeMatureTasks()
-				if err != nil {
-					logger.WithFields(logrus.Fields{
-						"function": "SubscribeToRedisChannel",
-					}).Errorf("dispatch tasks failed: %v", err)
-				}
-				isTaskBeingProcessed = false
+			if isBusy.Load().(bool) {
+				logger.WithFields(logrus.Fields{
+					"function": "SubscribeToRedisChannel",
+				}).Infof("task is being processed, skip")
+				continue
 			}
-			taskProcessingLock.Unlock()
+			isBusy.Store(true)
+			// check redis priority queue and dispatch tasks
+			tasks := data_structure_redis.PopJobsForDispatchWithBuffer()
+			redisThroughput.Add(float64(len(tasks)))
+			for _, task := range tasks {
+				go handleTask(task)
+			}
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"function": "SubscribeToRedisChannel",
+				}).Errorf("dispatch tasks failed: %v", err)
+			}
+			isBusy.Store(false)
 
 		} else if msg.Payload == data_structure_redis.RETRY_AVAILABLE {
 			for {
@@ -510,51 +519,55 @@ func SubscribeToRedisChannel() {
 	}
 }
 
-func executeMatureTasks() error {
-	dispatchTotal.Inc()
-	matureTasks := data_structure_redis.PopJobsForDispatchWithBuffer()
-	redisThroughput.Inc()
-	for _, task := range matureTasks {
+func handleTask(task *constants.TaskCache) {
+	logger.WithFields(logrus.Fields{
+		"function": "handleTask",
+	}).Infof("dispatching task: %s with job type %s", task.ID, constants.TypeMap[task.JobType])
+	logger.WithFields(logrus.Fields{
+		"function": "executeMatureTasks",
+	}).Infof("dispatching task: %s with job type %s", task.ID, constants.TypeMap[task.JobType])
+	runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
+		constants.JOBDISPATCHED, "nil")
+
+	var err error
+	err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
+		runningTaskInfo)
+
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "INSERT", "table": constants.RUNNING_JOBS_RECORD}).Inc()
+
+	if err != nil {
 		logger.WithFields(logrus.Fields{
-			"function": "executeMatureTasks",
-		}).Infof("dispatching task: %s with job type %s", task.ID, constants.TypeMap[task.JobType])
-		runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
-			constants.JOBDISPATCHED, "nil")
-
-		var err error
-		err = databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD,
-			runningTaskInfo)
-
-		postgresqlOpsTotal.With(prometheus.Labels{"operation": "INSERT", "table": constants.RUNNING_JOBS_RECORD}).Inc()
-
-		if err != nil {
-			return err
-		}
-
-		err = data_structure_redis.SetLeaseWithID(task.ID, task.ExecutionID, 2*time.Second)
-		redisThroughput.Inc()
-		if err != nil {
-			return err
-		}
-
-		// TODO: 可能需要放在一个goroutine里面
-		workerID, status, err := HandoutTasksForExecuting(task)
-		grpcOpsTotal.With(prometheus.Labels{"operation": "EXECUTE_TASK", "sender": managerID}).Inc()
-
-		logger.WithFields(logrus.Fields{
-			"function": "executeMatureTasks",
-		}).Infof("dispatch task: %s and executing by %s, found error: %v with status %s",
-			task.ID, workerID, err, constants.StatusMap[status])
-
-		if status == constants.JOBFAILED {
-			handleJobFailed(task, status)
-		}
-
-		// check if the job is recurring job, if so, update the execution time
-		//and add it to redis priority queue if in next 10 mins
-		go handleRecurringJobAfterDispatch(task)
+			"function": "handleTask",
+			"error":    err,
+		}).Error("Failed to insert task into database")
+		return
 	}
-	return nil
+
+	err = data_structure_redis.SetLeaseWithID(task.ID, task.ExecutionID, 2*time.Second)
+	redisThroughput.Inc()
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"function": "handleTask",
+			"error":    err,
+		}).Error("Failed to set lease with ID in Redis")
+		return
+	}
+
+	workerID, status, err := HandoutTasksForExecuting(task)
+	grpcOpsTotal.With(prometheus.Labels{"operation": "EXECUTE_TASK", "sender": managerID}).Inc()
+
+	logger.WithFields(logrus.Fields{
+		"function": "executeMatureTasks",
+	}).Infof("dispatch task: %s and executing by %s, found error: %v with status %s",
+		task.ID, workerID, err, constants.StatusMap[status])
+
+	if status == constants.JOBFAILED {
+		go handleJobFailed(task, status)
+	}
+
+	// check if the job is recurring job, if so, update the execution time
+	//and add it to redis priority queue if in next 10 mins
+	go handleRecurringJobAfterDispatch(task)
 }
 
 func handleRecurringJobAfterDispatch(task *constants.TaskCache) {
@@ -577,6 +590,30 @@ func handleRecurringJobAfterDispatch(task *constants.TaskCache) {
 	}
 }
 
+func getGRPCConnection(workerService string) (*grpc.ClientConn, error) {
+	poolMutex.Lock()
+	defer poolMutex.Unlock()
+
+	if len(connPool) > 0 {
+		conn := connPool[0]
+		connPool = connPool[1:]
+		return conn, nil
+	}
+
+	conn, err := grpc.Dial(workerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		return nil, fmt.Errorf("did not connect: %v", err)
+	}
+	return conn, nil
+}
+
+func releaseGRPCConnection(conn *grpc.ClientConn) {
+	poolMutex.Lock()
+	defer poolMutex.Unlock()
+
+	connPool = append(connPool, conn)
+}
+
 func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 	logger.WithFields(logrus.Fields{
 		"function": "HandoutTasksForExecuting",
@@ -586,11 +623,16 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 	if workerService == "" {
 		workerService = WORKER_SERVICE
 	}
-	conn, err := grpc.Dial(workerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := getGRPCConnection(workerService)
 	if err != nil {
-		return task.ID, constants.JOBFAILED, fmt.Errorf("did not connect: %v", err)
+		logger.WithFields(logrus.Fields{
+			"function": "HandoutTasksForExecuting",
+			"error":    err,
+		}).Error("Failed to get grpc connection")
+		return "", constants.JOBFAILED, err
 	}
-	defer conn.Close()
+	defer releaseGRPCConnection(conn)
+
 	client := pb.NewTaskServiceClient(conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), constants.EXECUTE_TASK_GRPC_TIMEOUT)
@@ -645,31 +687,26 @@ func MonitorHeadNode() {
 	logger.WithFields(logrus.Fields{
 		"function": "MonitorHeadNode",
 	}).Info("Start monitoring head node")
-	headNodeTicker := time.NewTicker(1 * time.Second)
-	defer headNodeTicker.Stop()
+
 	for {
-		select {
-		case <-headNodeTicker.C:
-			taskProcessingLock.Lock()
-			if !isTaskBeingProcessed {
-				isTaskBeingProcessed = true
-				taskCache := data_structure_redis.GetNextJob()
-				redisThroughput.Inc()
-				if taskCache != nil && data_structure_redis.CheckWithinThreshold(taskCache.ExecutionTime) {
-					logger.WithFields(logrus.Fields{
-						"function": "MonitorHeadNode",
-					}).Infof("dispatch task: %s", taskCache.ID)
-					err := executeMatureTasks()
-					if err != nil {
-						logger.WithFields(logrus.Fields{
-							"function": "MonitorHeadNode",
-							"error":    err,
-						}).Error("execute mature tasks failed")
-					}
-				}
-				isTaskBeingProcessed = false
+		if isBusy.Load().(bool) {
+			continue
+		}
+		headNode := data_structure_redis.GetNextJob()
+		if headNode != nil && data_structure_redis.CheckWithinThreshold(headNode.ExecutionTime) {
+			isBusy.Store(true)
+			lastTaskTime.Store(time.Now())
+			tasks := data_structure_redis.PopJobsForDispatchWithBuffer()
+			redisThroughput.Add(float64(len(tasks)))
+			for _, task := range tasks {
+				go handleTask(task)
 			}
-			taskProcessingLock.Unlock()
+			// 让它休息一下
+			time.Sleep(10 * time.Millisecond)
+		} else {
+			if time.Since(lastTaskTime.Load().(time.Time)) > constants.HEADNODE_IDLE_TIMEOUT {
+				isBusy.Store(false)
+			}
 		}
 	}
 }

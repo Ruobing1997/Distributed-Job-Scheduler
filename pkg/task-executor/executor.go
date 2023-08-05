@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,8 @@ var (
 	workerID       = os.Getenv("HOSTNAME")
 	databaseClient *postgreSQL.Client
 	logger         = logrus.New()
+	connPool       []*grpc.ClientConn
+	poolMutex      sync.Mutex
 )
 
 type Result struct {
@@ -75,6 +78,32 @@ func InitWorkerGRPC() {
 	}
 }
 
+func getGRPCConnection(managerService string) (*grpc.ClientConn, error) {
+	poolMutex.Lock()
+	defer poolMutex.Unlock()
+
+	// 如果连接池中有可用的连接，返回一个
+	if len(connPool) > 0 {
+		conn := connPool[0]
+		connPool = connPool[1:]
+		return conn, nil
+	}
+
+	// 否则，创建一个新的连接
+	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure())
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
+func releaseGRPCConnection(conn *grpc.ClientConn) {
+	poolMutex.Lock()
+	defer poolMutex.Unlock()
+
+	connPool = append(connPool, conn)
+}
+
 func ExecuteTask(task *constants.TaskCache) (string, error) {
 	tasksTotal.Inc()
 	logger.WithFields(logrus.Fields{
@@ -124,7 +153,7 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 				"function":    "ExecuteTask",
 				"taskID":      task.ID,
 				"executionID": task.ExecutionID,
-			}).Infof("Task: %s failed with error: %v", task.ID, err)
+			}).Errorf("Task: %s failed with error: %v", task.ID, err)
 			err = databaseClient.UpdateByExecutionID(context.Background(),
 				constants.RUNNING_JOBS_RECORD, task.ExecutionID,
 				map[string]interface{}{"job_status": constants.JOBFAILED})
@@ -163,15 +192,17 @@ func notifyManagerTaskResult(taskID string, execID string, jobStatus int) {
 	if managerService == "" {
 		managerService = MANAGER_SERVICE
 	}
-	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := getGRPCConnection(managerService)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"function":    "notifyManagerTaskResult",
 			"taskID":      taskID,
 			"executionID": execID,
 		}).Errorf("did not connect: %v", err)
+		return
 	}
-	defer conn.Close()
+	defer releaseGRPCConnection(conn)
+
 	client := pb.NewTaskServiceClient(conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), constants.EXECUTE_TASK_GRPC_TIMEOUT)
@@ -244,15 +275,19 @@ func RenewLease(taskID string, execID string, duration time.Duration) (bool, err
 	if managerService == "" {
 		managerService = MANAGER_SERVICE
 	}
-	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
+
+	conn, err := getGRPCConnection(managerService)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"function":    "RenewLease",
 			"taskID":      taskID,
 			"executionID": execID,
 		}).Errorf("did not connect: %v", err)
+		return false, fmt.Errorf("did not connect: %v", err)
 	}
-	defer conn.Close()
+
+	defer releaseGRPCConnection(conn)
+
 	client := pb.NewLeaseServiceClient(conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), constants.RENEW_LEASE_GRPC_TIMEOUT)

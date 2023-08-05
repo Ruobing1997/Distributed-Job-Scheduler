@@ -133,6 +133,7 @@ func InitLeaderElection(control ServerControlInterface) {
 					"manager":  managerID,
 					"PodIP":    os.Getenv("POD_IP"),
 				}).Info(fmt.Sprintf("manager: %v started leading", managerID))
+				isBusy.Store(false)
 				updateEndpointsWithLeaderIP(os.Getenv("POD_IP"))
 				InitConnection()
 				PrometheusManagerInit()

@@ -133,7 +133,7 @@ func InitLeaderElection(control ServerControlInterface) {
 					"manager":  managerID,
 					"PodIP":    os.Getenv("POD_IP"),
 				}).Info(fmt.Sprintf("manager: %v started leading", managerID))
-				isBusy.Store(false)
+				setBusyStatus(false)
 				lastTaskTime.Store(time.Now())
 				updateEndpointsWithLeaderIP(os.Getenv("POD_IP"))
 				InitConnection()
@@ -518,7 +518,7 @@ func SubscribeToRedisChannel() {
 				}).Errorf("dispatch tasks failed: %v", err)
 			}
 			time.Sleep(100 * time.Millisecond)
-			isBusy.Store(false)
+			setBusyStatus(false)
 
 		} else if msg.Payload == data_structure_redis.RETRY_AVAILABLE {
 			for {
@@ -716,7 +716,7 @@ func MonitorHeadNode() {
 		}
 		headNode := data_structure_redis.GetNextJob()
 		if headNode != nil && data_structure_redis.CheckWithinThreshold(headNode.ExecutionTime) {
-			isBusy.Store(true)
+			setBusyStatus(true)
 			lastTaskTime.Store(time.Now())
 			tasks := data_structure_redis.PopJobsForDispatchWithBuffer()
 			redisThroughput.Add(float64(len(tasks)))
@@ -727,7 +727,7 @@ func MonitorHeadNode() {
 			time.Sleep(10 * time.Millisecond)
 		} else {
 			if time.Since(lastTaskTime.Load().(time.Time)) > constants.HEADNODE_IDLE_TIMEOUT {
-				isBusy.Store(false)
+				setBusyStatus(false)
 			}
 		}
 	}

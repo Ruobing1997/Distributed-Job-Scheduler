@@ -61,9 +61,12 @@ services:
       - DB_PASSWORD=970409
       - DB_HOST=postgres
       - DB_NAME=postgres
-      - POOL_MODE=transaction
+      - POOL_MODE=session
       - ADMIN_USERS=postgres
       - AUTH_TYPE=plain
+      - MAX_CLIENT_CONN=5000
+      - DEFAULT_POOL_SIZE=5000
+      - RESERVE_POOL_SIZE=5000
     ports:
       - "5432:5432"
     depends_on:

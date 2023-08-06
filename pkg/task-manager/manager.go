@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"io"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -57,7 +58,7 @@ type ServerControlInterface interface {
 
 func InitConnection() {
 	timeTracker = time.Now().UTC()
-	_, err := os.OpenFile("./logs/managers/manager-"+managerID+".log",
+	logFile, err := os.OpenFile("./logs/managers/manager-"+managerID+".log",
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
@@ -66,8 +67,8 @@ func InitConnection() {
 			"error":    err,
 		}).Fatal("failed to open log file")
 	}
-	//multiWrite := io.MultiWriter(os.Stdout, logFile)
-	logger.SetOutput(os.Stdout)
+	multiWrite := io.MultiWriter(os.Stdout, logFile)
+	logger.SetOutput(multiWrite)
 	logger.SetFormatter(&logrus.JSONFormatter{})
 	databaseClient = postgreSQL.NewpostgreSQLClient()
 	redisClient = data_structure_redis.Init()
@@ -700,6 +701,8 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 		Script: task.Payload.Script,
 	}
 
+	grpcOpsTotal.With(prometheus.Labels{
+		"operation": "Execute Task", "sender": managerID}).Inc()
 	r, err := wrapper.Client.ExecuteTask(ctx, &pb.TaskRequest{
 		Id:            task.ID,
 		Payload:       payload,

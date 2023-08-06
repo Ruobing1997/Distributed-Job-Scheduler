@@ -2,7 +2,7 @@ DO $$
 DECLARE
 i INTEGER := 0;
 BEGIN
-    WHILE i < 1000 LOOP
+    WHILE i < 4000 LOOP
         INSERT INTO job_full_info(
             id,
             job_name,

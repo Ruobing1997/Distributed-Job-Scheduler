@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS job_full_info (
 
 CREATE INDEX IF NOT EXISTS task_db_execution_time_brin_idx ON job_full_info USING BRIN (execution_time);
 CREATE INDEX IF NOT EXISTS task_db_create_time_brin_idx ON job_full_info USING BRIN (create_time);
+CREATE INDEX IF NOT EXISTS task_db_id_idx ON job_full_info (id);
+
 
 CREATE TABLE IF NOT EXISTS running_tasks_record
 (
@@ -33,11 +35,5 @@ CREATE TABLE IF NOT EXISTS running_tasks_record
 
 CREATE INDEX IF NOT EXISTS execution_record_job_status_idx ON running_tasks_record (job_status);
 CREATE INDEX IF NOT EXISTS execution_record_worker_id_idx ON running_tasks_record (worker_id);
-
-CREATE TABLE IF NOT EXISTS taskid_execid_mapping
-(
-    task_id VARCHAR(255) NOT NULL,
-    execution_id VARCHAR(255) NOT NULL PRIMARY KEY
-);
-
-CREATE INDEX IF NOT EXISTS taskid_execid_mapping_task_id_idx ON taskid_execid_mapping (task_id);
+CREATE INDEX IF NOT EXISTS execution_record_id_index ON running_tasks_record (id);
+CREATE INDEX IF NOT EXISTS execution_record_exec_id_index ON running_tasks_record (execution_id);

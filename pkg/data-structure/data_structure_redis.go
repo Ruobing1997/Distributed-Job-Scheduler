@@ -242,9 +242,9 @@ func SetLeaseWithID(taskID string, execID string, duration time.Duration) error 
 	return nil
 }
 
-func RemoveLeaseWithID(taskID string, execID string) error {
+func RemoveLeaseWithID(ctx context.Context, taskID string, execID string) error {
 	leaseKey := fmt.Sprintf("lease:task:%sexecute:%s", taskID, execID)
-	err := client.Del(context.Background(), leaseKey).Err()
+	err := client.Del(ctx, leaseKey).Err()
 	if err != nil {
 		return fmt.Errorf("remove lease failed: %v", err)
 	}

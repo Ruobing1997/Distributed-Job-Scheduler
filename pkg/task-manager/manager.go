@@ -571,7 +571,7 @@ func SubscribeToRedisChannel() {
 						}).Errorf("Failed to handout task for execution: %s", task.ID)
 					}
 					if status == constants.JOBFAILED {
-						handleJobFailed(task, status)
+						handleJobFailed(context.Background(), task, status)
 					}
 				}(retryTask)
 			}
@@ -584,7 +584,7 @@ func SubscribeToRedisChannel() {
 // HandoutTasksForExecuting调用了grpc，也并发，
 // handlejobfailed收到HandoutTasksForExecuting返回的结果相应的处理fail的状态
 // 不管结果如何, 需要安排下一次任务
-func handleTask(task *constants.TaskCache) {
+func handleTask(ctx context.Context, task *constants.TaskCache) {
 	logger.WithFields(logrus.Fields{
 		"function": "handleTask",
 	}).Infof("dispatching task: %s with job type %s", task.ID, constants.TypeMap[task.JobType])
@@ -647,10 +647,9 @@ func handleTask(task *constants.TaskCache) {
 			task.ID, handoutResult.workerID, handoutResult.err, constants.StatusMap[handoutResult.status])
 
 		if handoutResult.status == constants.JOBFAILED {
-			handleJobFailed(task, handoutResult.status)
+			handleJobFailed(ctx, task, handoutResult.status)
 		}
 	}()
-
 }
 
 func handleRecurringJobAfterDispatch(task *constants.TaskCache) {
@@ -757,13 +756,13 @@ func MonitorHeadNode() {
 				"function": "MonitorHeadNode",
 			}).Infof("Dispatching this number %d of tasks", len(tasks))
 			for _, task := range tasks {
-				go handleTask(task)
+				go handleTask(context.Background(), task)
 			}
 		}
 	}
 }
 
-func handleJobFailed(task *constants.TaskCache, jobStatusCode int) error {
+func handleJobFailed(ctx context.Context, task *constants.TaskCache, jobStatusCode int) error {
 	logger.WithFields(logrus.Fields{
 		"function": "handleJobFailed",
 	}).Infof("handle job failed: %s Exec ID: %s", task.ID, task.ExecutionID)
@@ -771,19 +770,19 @@ func handleJobFailed(task *constants.TaskCache, jobStatusCode int) error {
 	// task_db only update when the update is completely failed (retries == 0 or outdated)
 	if checkJobCompletelyFailed(task) {
 		failedTasksTotal.Inc()
-		return handleCompletelyFailedJob(task, jobStatusCode)
+		return handleCompletelyFailedJob(ctx, task, jobStatusCode)
 	}
-	return handleRescheduleFailedJob(task)
+	return handleRescheduleFailedJob(ctx, task)
 }
 
-func handleRescheduleFailedJob(task *constants.TaskCache) error {
+func handleRescheduleFailedJob(ctx context.Context, task *constants.TaskCache) error {
 	// update not completely failed, update the retries left, time
 	// and add to redis priority queue
 	logger.WithFields(logrus.Fields{
 		"function": "handleRescheduleFailedJob",
 	}).Infof("Eeschedule failed job: %s Exec ID: %s", task.ID, task.ExecutionID)
 
-	err := data_structure_redis.RemoveLeaseWithID(task.ID, task.ExecutionID)
+	err := data_structure_redis.RemoveLeaseWithID(ctx, task.ID, task.ExecutionID)
 	redisThroughput.Inc()
 	if err != nil {
 		return err
@@ -796,13 +795,13 @@ func handleRescheduleFailedJob(task *constants.TaskCache) error {
 	return nil
 }
 
-func handleCompletelyFailedJob(task *constants.TaskCache, jobStatusCode int) error {
+func handleCompletelyFailedJob(ctx context.Context, task *constants.TaskCache, jobStatusCode int) error {
 	logger.WithFields(logrus.Fields{
 		"function": "handleCompletelyFailedJob",
 	}).Infof("Completely failed job: %s Exec ID: %s", task.ID, task.ExecutionID)
 
 	// update completely failed need to update all information for report user.
-	err := data_structure_redis.RemoveLeaseWithID(task.ID, task.ExecutionID)
+	err := data_structure_redis.RemoveLeaseWithID(ctx, task.ID, task.ExecutionID)
 	redisThroughput.Inc()
 	// update the task according to task execution id.
 	err = databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD,
@@ -1004,7 +1003,11 @@ func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 
 	// Start goroutines to handle the database and Redis operations asynchronously
 	go func() {
-		err := data_structure_redis.RemoveLeaseWithID(in.TaskId, in.ExecId)
+		// Create a new context for this goroutine
+		localCtx, cancel := context.WithTimeout(context.Background(), constants.TIMEOUT)
+		defer cancel()
+
+		err := data_structure_redis.RemoveLeaseWithID(localCtx, in.TaskId, in.ExecId)
 		redisThroughput.Inc()
 		if err != nil {
 			logger.WithFields(logrus.Fields{
@@ -1014,7 +1017,11 @@ func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 	}()
 
 	go func() {
-		record, err := databaseClient.GetTaskByID(ctx, constants.RUNNING_JOBS_RECORD, in.ExecId)
+		// Create a new context for this goroutine
+		localCtx, cancel := context.WithTimeout(context.Background(), constants.TIMEOUT)
+		defer cancel()
+
+		record, err := databaseClient.GetTaskByID(localCtx, constants.RUNNING_JOBS_RECORD, in.ExecId)
 		postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.RUNNING_JOBS_RECORD}).Inc()
 		if err != nil {
 			logger.WithFields(logrus.Fields{
@@ -1031,9 +1038,9 @@ func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 
 		// Process based on the job status
 		if in.Status == int32(constants.JOBSUCCEED) {
-			handleJobSucceed(taskCache)
+			handleJobSucceed(localCtx, taskCache)
 		} else {
-			handleJobFailed(taskCache, constants.JOBFAILED)
+			handleJobFailed(localCtx, taskCache, constants.JOBFAILED)
 		}
 	}()
 
@@ -1041,17 +1048,17 @@ func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 	return &pb.NotifyMessageResponse{Success: true}, nil
 }
 
-func handleJobSucceed(task *constants.TaskCache) error {
+func handleJobSucceed(ctx context.Context, task *constants.TaskCache) error {
 	logger.WithFields(logrus.Fields{
 		"function": "handleJobSucceed",
 	}).Infof("handle job succeed for job: %s for job type: %s", task.ID, constants.TypeMap[task.JobType])
 	if task.JobType == constants.Recurring {
-		return handleRecurringJobSucceed(task)
+		return handleRecurringJobSucceed(ctx, task)
 	}
-	return handleOneTimeJobSucceed(task)
+	return handleOneTimeJobSucceed(ctx, task)
 }
 
-func handleOneTimeJobSucceed(task *constants.TaskCache) error {
+func handleOneTimeJobSucceed(ctx context.Context, task *constants.TaskCache) error {
 	logger.WithFields(logrus.Fields{
 		"function": "handleOneTimeJobSucceed",
 	}).Infof("task: %s is one time job, update task_db table and remove lease", task.ID)
@@ -1068,7 +1075,7 @@ func handleOneTimeJobSucceed(task *constants.TaskCache) error {
 	if err != nil {
 		return err
 	}
-	err = data_structure_redis.RemoveLeaseWithID(task.ID, task.ExecutionID)
+	err = data_structure_redis.RemoveLeaseWithID(ctx, task.ID, task.ExecutionID)
 	redisThroughput.Inc()
 	if err != nil {
 		return err
@@ -1076,7 +1083,7 @@ func handleOneTimeJobSucceed(task *constants.TaskCache) error {
 	return nil
 }
 
-func handleRecurringJobSucceed(task *constants.TaskCache) error {
+func handleRecurringJobSucceed(ctx context.Context, task *constants.TaskCache) error {
 	logger.WithFields(logrus.Fields{
 		"function": "handleRecurringJobSucceed",
 	}).Infof("task: %s is recurring job, update task_db table and remove lease", task.ID)
@@ -1105,7 +1112,7 @@ func handleRecurringJobSucceed(task *constants.TaskCache) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		redisErr = data_structure_redis.RemoveLeaseWithID(task.ID, task.ExecutionID)
+		redisErr = data_structure_redis.RemoveLeaseWithID(ctx, task.ID, task.ExecutionID)
 	}()
 
 	wg.Wait()

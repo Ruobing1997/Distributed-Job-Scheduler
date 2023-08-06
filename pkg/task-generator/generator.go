@@ -36,8 +36,8 @@ func generateTaskDB(id string, jobName string, jobType int, cronExpr string, for
 		Status:                0,
 		ExecutionTime:         executionTime,
 		PreviousExecutionTime: executionTime,
-		CreateTime:            time.Now(),
-		UpdateTime:            time.Now(),
+		CreateTime:            time.Now().UTC(),
+		UpdateTime:            time.Now().UTC(),
 		Retries:               retries,
 	}
 	return &taskDB
@@ -54,7 +54,7 @@ func DecryptCronExpress(cronExpr string) time.Time {
 	if err != nil {
 		panic(err)
 	}
-	executionTime := schedule.Next(time.Now())
+	executionTime := schedule.Next(time.Now().UTC())
 	return executionTime
 }
 

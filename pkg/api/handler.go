@@ -29,19 +29,28 @@ func GenerateTaskHandler(c *gin.Context) (taskID string) {
 		return "nil"
 	}
 
-	jobName := taskRequest.JobName
-	jobType := taskRequest.JobType
-	cronExpr := taskRequest.CronExpr
-	format := taskRequest.Format
-	script := taskRequest.Script
-	retries := taskRequest.Retries
+	ch := make(chan string)
+	go func() {
+		jobName := taskRequest.JobName
+		jobType := taskRequest.JobType
+		cronExpr := taskRequest.CronExpr
+		format := taskRequest.Format
+		script := taskRequest.Script
+		retries := taskRequest.Retries
 
-	taskID, err := task_manager.HandleNewTasks(jobName, jobType, cronExpr, format, script, "", retries)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return "nil"
+		taskID, err := task_manager.HandleNewTasks(jobName, jobType, cronExpr, format, script, "", retries)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			ch <- "nil"
+		} else {
+			ch <- taskID
+		}
+	}()
+
+	taskID = <-ch
+	if taskID != "nil" {
+		c.JSON(http.StatusOK, gin.H{"status": "Successfully generated update"})
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "Successfully generated update"})
 	return taskID
 }
 
@@ -79,8 +88,8 @@ func UpdateTaskHandler(c *gin.Context) {
 		"cron_expression": cronExpr,
 		"execute_format":  format,
 		"execute_script":  script,
-		"update_time":     time.Now(),
-		"create_time":     time.Now(),
+		"update_time":     time.Now().UTC(),
+		"create_time":     time.Now().UTC(),
 		"retries_left":    retries}
 	err := task_manager.HandleUpdateTasks(
 		taskID, updateVarsMap)

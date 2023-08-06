@@ -12,7 +12,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 )
 
 type ServerControl struct{}
@@ -38,10 +37,15 @@ var startCmd = &cobra.Command{
 		fmt.Println("***********************************************************")
 		fmt.Println("*********MorFun_SuperNova Manager is All YOU NEED***********")
 		fmt.Println("***********************************************************")
-		time.Sleep(10 * time.Second)
+		//time.Sleep(10 * time.Second)
 		managerControl := &ServerControl{}
 		fmt.Println("MorFun_SuperNova Manager Start Leader Election")
-		task_manager.InitLeaderElection(managerControl)
+		//task_manager.InitLeaderElection(managerControl)
+		task_manager.InitConnection()
+		task_manager.PrometheusManagerInit()
+		go task_manager.InitManagerGRPC()
+		task_manager.Start()
+		managerControl.StartAPIServer()
 	},
 }
 

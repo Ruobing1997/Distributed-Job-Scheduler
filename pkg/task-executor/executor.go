@@ -15,16 +15,16 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"sync"
 	"time"
 )
 
 var (
-	workerID       = os.Getenv("HOSTNAME")
-	databaseClient *postgreSQL.Client
-	logger         = logrus.New()
-	connPool       []*grpc.ClientConn
-	poolMutex      sync.Mutex
+	workerID              = os.Getenv("HOSTNAME")
+	databaseClient        *postgreSQL.Client
+	logger                = logrus.New()
+	grpcGlobalTaskClient  pb.TaskServiceClient
+	grpcGlobalLeaseClient pb.LeaseServiceClient
+	managerService        string
 )
 
 type Result struct {
@@ -52,8 +52,8 @@ func Init() {
 	logger.WithFields(logrus.Fields{
 		"function": "Init",
 	}).Info("database client is initialized")
-
-	PrometheusManagerInit()
+	go initConnection()
+	go PrometheusManagerInit()
 }
 
 type ServerImpl struct {
@@ -78,30 +78,20 @@ func InitWorkerGRPC() {
 	}
 }
 
-func getGRPCConnection(managerService string) (*grpc.ClientConn, error) {
-	poolMutex.Lock()
-	defer poolMutex.Unlock()
-
-	// 如果连接池中有可用的连接，返回一个
-	if len(connPool) > 0 {
-		conn := connPool[0]
-		connPool = connPool[1:]
-		return conn, nil
+func initConnection() {
+	managerService = os.Getenv("MANAGER_SERVICE")
+	if managerService == "" {
+		managerService = MANAGER_SERVICE
 	}
-
-	// 否则，创建一个新的连接
-	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure())
+	conn, err := grpc.Dial(managerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		return nil, err
+		logger.WithFields(logrus.Fields{
+			"function": "initConnection",
+		}).Fatalf("did not connect: %v", err)
 	}
-	return conn, nil
-}
 
-func releaseGRPCConnection(conn *grpc.ClientConn) {
-	poolMutex.Lock()
-	defer poolMutex.Unlock()
-
-	connPool = append(connPool, conn)
+	grpcGlobalTaskClient = pb.NewTaskServiceClient(conn)
+	grpcGlobalLeaseClient = pb.NewLeaseServiceClient(conn)
 }
 
 func ExecuteTask(task *constants.TaskCache) (string, error) {
@@ -188,22 +178,8 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 
 func notifyManagerTaskResult(taskID string, execID string, jobStatus int) {
 	grpcOpsTotal.With(prometheus.Labels{"method": "Notify", "sender": workerID}).Inc()
-	managerService := os.Getenv("MANAGER_SERVICE")
-	if managerService == "" {
-		managerService = MANAGER_SERVICE
-	}
-	conn, err := getGRPCConnection(managerService)
-	if err != nil {
-		logger.WithFields(logrus.Fields{
-			"function":    "notifyManagerTaskResult",
-			"taskID":      taskID,
-			"executionID": execID,
-		}).Errorf("did not connect: %v", err)
-		return
-	}
-	defer releaseGRPCConnection(conn)
 
-	client := pb.NewTaskServiceClient(conn)
+	client := grpcGlobalTaskClient
 
 	ctx, cancel := context.WithTimeout(context.Background(), constants.EXECUTE_TASK_GRPC_TIMEOUT)
 	defer cancel()
@@ -276,19 +252,7 @@ func RenewLease(taskID string, execID string, duration time.Duration) (bool, err
 		managerService = MANAGER_SERVICE
 	}
 
-	conn, err := getGRPCConnection(managerService)
-	if err != nil {
-		logger.WithFields(logrus.Fields{
-			"function":    "RenewLease",
-			"taskID":      taskID,
-			"executionID": execID,
-		}).Errorf("did not connect: %v", err)
-		return false, fmt.Errorf("did not connect: %v", err)
-	}
-
-	defer releaseGRPCConnection(conn)
-
-	client := pb.NewLeaseServiceClient(conn)
+	client := grpcGlobalLeaseClient
 
 	ctx, cancel := context.WithTimeout(context.Background(), constants.RENEW_LEASE_GRPC_TIMEOUT)
 	defer cancel()

@@ -13,7 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"io"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -28,14 +27,18 @@ import (
 )
 
 var (
-	timeTracker    time.Time
-	databaseClient *postgreSQL.Client
-	redisClient    *redis.Client
-	managerID      = os.Getenv("HOSTNAME")
-	logger         = logrus.New()
-	connPool       []*grpc.ClientConn
-	poolMutex      sync.Mutex
+	timeTracker      time.Time
+	databaseClient   *postgreSQL.Client
+	redisClient      *redis.Client
+	managerID        = os.Getenv("HOSTNAME")
+	logger           = logrus.New()
+	grpcGlobalClient pb.TaskServiceClient
 )
+
+type GRPCClientPool struct {
+	Conn   *grpc.ClientConn
+	Client pb.TaskServiceClient
+}
 
 type ServerImpl struct {
 	pb.UnimplementedTaskServiceServer
@@ -49,7 +52,7 @@ type ServerControlInterface interface {
 
 func InitConnection() {
 	timeTracker = time.Now()
-	logFile, err := os.OpenFile("./logs/managers/manager-"+managerID+".log",
+	_, err := os.OpenFile("./logs/managers/manager-"+managerID+".log",
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		logger.WithFields(logrus.Fields{
@@ -58,12 +61,26 @@ func InitConnection() {
 			"error":    err,
 		}).Fatal("failed to open log file")
 	}
-	multiWrite := io.MultiWriter(os.Stdout, logFile)
-	logger.SetOutput(multiWrite)
+	//multiWrite := io.MultiWriter(os.Stdout, logFile)
+	logger.SetOutput(os.Stdout)
 	logger.SetFormatter(&logrus.JSONFormatter{})
 	// TODO: make the user to choose database type
 	databaseClient = postgreSQL.NewpostgreSQLClient()
 	redisClient = data_structure_redis.Init()
+
+	workerService := os.Getenv("WORKER_SERVICE")
+	if workerService == "" {
+		workerService = WORKER_SERVICE
+	}
+	conn, err := grpc.Dial(workerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"function": "InitConnection",
+			"result":   "failed to connect to worker",
+			"error":    err,
+		}).Fatal("failed to connect to worker")
+	}
+	grpcGlobalClient = pb.NewTaskServiceClient(conn)
 }
 
 func InitManagerGRPC() {
@@ -198,7 +215,7 @@ func Start() {
 
 	startGoroutine(func(ch chan bool) {
 		ch <- true
-		ticker := time.NewTicker(1 * time.Minute)
+		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -451,13 +468,19 @@ func HandleGetTaskHistory(taskID string) ([]*constants.RunTimeTask, error) {
 
 func AddTasksFromDBWithTickers() {
 	logger.WithFields(logrus.Fields{
-		"function": "AddTasksFromDBWithTickers",
+		"function":       "AddTasksFromDBWithTickers",
+		"Now: ":          time.Now(),
+		"End: ":          time.Now().Add(DURATION),
+		"Time Tracker: ": timeTracker,
 	}).Info("add tasks from database with tickers")
 	tasks, _ := databaseClient.GetTasksInInterval(time.Now(), time.Now().Add(DURATION), timeTracker)
 	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.TASKS_FULL_RECORD}).Inc()
 	timeTracker = time.Now()
 	for _, task := range tasks {
-		addNewJobToRedis(task)
+		logger.WithFields(logrus.Fields{
+			"function": "AddTasksFromDBWithTickers",
+		}).Infof("add task %v", task)
+		go addNewJobToRedis(task)
 	}
 }
 
@@ -497,9 +520,6 @@ func SubscribeToRedisChannel() {
 func handleTask(task *constants.TaskCache) {
 	logger.WithFields(logrus.Fields{
 		"function": "handleTask",
-	}).Infof("dispatching task: %s with job type %s", task.ID, constants.TypeMap[task.JobType])
-	logger.WithFields(logrus.Fields{
-		"function": "executeMatureTasks",
 	}).Infof("dispatching task: %s with job type %s", task.ID, constants.TypeMap[task.JobType])
 	runningTaskInfo := generator.GenerateRunTimeTaskThroughTaskCache(task,
 		constants.JOBDISPATCHED, "nil")
@@ -565,51 +585,10 @@ func handleRecurringJobAfterDispatch(task *constants.TaskCache) {
 	}
 }
 
-func getGRPCConnection(workerService string) (*grpc.ClientConn, error) {
-	poolMutex.Lock()
-	defer poolMutex.Unlock()
-
-	if len(connPool) > 0 {
-		conn := connPool[0]
-		connPool = connPool[1:]
-		return conn, nil
-	}
-
-	conn, err := grpc.Dial(workerService+":50051", grpc.WithInsecure(), grpc.WithBlock())
-	if err != nil {
-		return nil, fmt.Errorf("did not connect: %v", err)
-	}
-	return conn, nil
-}
-
-func releaseGRPCConnection(conn *grpc.ClientConn) {
-	poolMutex.Lock()
-	defer poolMutex.Unlock()
-
-	connPool = append(connPool, conn)
-}
-
 func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
-	dispatchTotal.Inc()
 	logger.WithFields(logrus.Fields{
 		"function": "HandoutTasksForExecuting",
 	}).Infof("handout task: %s with job type %s", task.ID, constants.TypeMap[task.JobType])
-
-	workerService := os.Getenv("WORKER_SERVICE")
-	if workerService == "" {
-		workerService = WORKER_SERVICE
-	}
-	conn, err := getGRPCConnection(workerService)
-	if err != nil {
-		logger.WithFields(logrus.Fields{
-			"function": "HandoutTasksForExecuting",
-			"error":    err,
-		}).Error("Failed to get grpc connection")
-		return "", constants.JOBFAILED, err
-	}
-	defer releaseGRPCConnection(conn)
-
-	client := pb.NewTaskServiceClient(conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), constants.EXECUTE_TASK_GRPC_TIMEOUT)
 	defer cancel()
@@ -619,44 +598,48 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 		Script: task.Payload.Script,
 	}
 
-	r, err := client.ExecuteTask(ctx, &pb.TaskRequest{
-		Id:            task.ID,
-		Payload:       payload,
-		ExecutionTime: timestamppb.New(task.ExecutionTime),
-		MaxRetryCount: int32(task.RetriesLeft),
-		ExecId:        task.ExecutionID,
-	})
+	dispatchTotal.Inc()
 
-	if ctxErr := ctx.Err(); ctxErr != nil {
+	var workerID string
+	var status int
+	var finalErr error
+
+	doneCh := make(chan struct{})
+	go func() {
+		r, err := grpcGlobalClient.ExecuteTask(ctx, &pb.TaskRequest{
+			Id:            task.ID,
+			Payload:       payload,
+			ExecutionTime: timestamppb.New(task.ExecutionTime),
+			MaxRetryCount: int32(task.RetriesLeft),
+			ExecId:        task.ExecutionID,
+		})
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"function": "HandoutTasksForExecuting",
+				"error":    err,
+			}).Infof("dispatched task: %s failed: %v", task.ID, err)
+			finalErr = err
+		} else {
+			workerID = r.Id
+			status = int(r.Status)
+		}
+		close(doneCh)
+	}()
+
+	select {
+	case <-doneCh:
 		logger.WithFields(logrus.Fields{
 			"function": "HandoutTasksForExecuting",
-			"error":    ctxErr,
+		}).Infof("Worker: %s executed task: %s with status %s",
+			workerID, task.ID, constants.StatusMap[status])
+	case <-time.After(constants.EXECUTE_TASK_GRPC_TIMEOUT):
+		logger.WithFields(logrus.Fields{
+			"function": "HandoutTasksForExecuting",
 		}).Info("grpc timeout")
-		// grpc timeout
-		if r != nil {
-			return r.Id, int(r.Status), fmt.Errorf("grpc timeout: %v", ctxErr)
-		}
-		return "", constants.JOBFAILED, fmt.Errorf("grpc timeout: %v", ctxErr)
+		finalErr = fmt.Errorf("grpc timeout")
 	}
 
-	if err != nil {
-		logger.WithFields(logrus.Fields{
-			"function": "HandoutTasksForExecuting",
-			"error":    err,
-		}).Infof("dispatched task: %s failed: %v", task.ID, err)
-		if r != nil {
-			return r.Id, constants.JOBFAILED,
-				fmt.Errorf("dispatched task: %s failed: %v", task.ID, err)
-		}
-		return "", constants.JOBFAILED,
-			fmt.Errorf("dispatched task: %s failed: %v", task.ID, err)
-	}
-
-	logger.WithFields(logrus.Fields{
-		"function": "HandoutTasksForExecuting",
-	}).Infof("Worker: %s executed task: %s with status %s",
-		r.Id, task.ID, constants.StatusMap[int(r.Status)])
-	return r.Id, int(r.Status), nil
+	return workerID, status, finalErr
 }
 
 func MonitorHeadNode() {
@@ -669,12 +652,13 @@ func MonitorHeadNode() {
 		if headNode != nil && data_structure_redis.CheckWithinThreshold(headNode.ExecutionTime) {
 			tasks := data_structure_redis.PopJobsForDispatchWithBuffer()
 			redisThroughput.Add(float64(len(tasks)))
+			logger.WithFields(logrus.Fields{
+				"function": "MonitorHeadNode",
+			}).Infof("Dispatching this number %d of tasks", len(tasks))
 			for _, task := range tasks {
 				go handleTask(task)
 			}
 		}
-		// 让它休息一下
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 

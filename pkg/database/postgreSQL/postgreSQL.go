@@ -25,6 +25,9 @@ func NewpostgreSQLClient() *Client {
 	postgresPassWord := os.Getenv("POSTGRES_PASSWORD")
 	fullPostgresURL := postgresURL + " password=" + postgresPassWord
 	db, err := sql.Open(os.Getenv("POSTGRES"), fullPostgresURL)
+	db.SetMaxOpenConns(1900)
+	db.SetMaxIdleConns(950)
+	db.SetConnMaxLifetime(time.Hour)
 	if err != nil {
 		log.Fatalf("Error opening database: %s", err.Error())
 	}
@@ -44,6 +47,7 @@ func (c *Client) InsertTask(ctx context.Context, table string, record databaseha
 			taskDB.CronExpr, taskDB.Payload.Format, taskDB.Payload.Script, taskDB.CallbackURL,
 			taskDB.Status, taskDB.ExecutionTime, taskDB.PreviousExecutionTime,
 			taskDB.CreateTime, taskDB.UpdateTime, taskDB.Retries)
+
 	case constants.RUNNING_JOBS_RECORD:
 		runTimeTask, ok := record.(*constants.RunTimeTask)
 		if !ok {
@@ -238,6 +242,7 @@ func (c *Client) GetAllTasks() ([]*constants.TaskDB, error) {
 func (c *Client) GetAllRunningTasks() ([]*constants.RunTimeTask, error) {
 	query := `SELECT * FROM running_tasks_record`
 	rows, err := c.db.Query(query)
+	defer rows.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +279,6 @@ func (c *Client) CountRunningTasks(ctx context.Context, idValue string) (int, er
 }
 
 func (c *Client) GetTaskHistoryByID(ctx context.Context, taskID string) ([]*constants.RunTimeTask, error) {
-	// 这是一个示例SQL查询，您可能需要根据实际的数据库结构进行修改
 	query := `SELECT * FROM running_tasks_record WHERE id = $1`
 
 	rows, err := c.db.QueryContext(ctx, query, taskID)

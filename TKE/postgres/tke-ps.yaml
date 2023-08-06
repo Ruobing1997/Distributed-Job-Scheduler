@@ -1,0 +1,186 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  creationTimestamp: "2023-08-05T22:50:48Z"
+  generation: 1
+  labels:
+    k8s-app: postgres
+    qcloud-app: postgres
+  managedFields:
+    - apiVersion: apps/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:metadata:
+          f:labels:
+            .: {}
+            f:k8s-app: {}
+            f:qcloud-app: {}
+        f:spec:
+          f:podManagementPolicy: {}
+          f:replicas: {}
+          f:revisionHistoryLimit: {}
+          f:selector:
+            f:matchLabels:
+              .: {}
+              f:k8s-app: {}
+              f:qcloud-app: {}
+          f:template:
+            f:metadata:
+              f:labels:
+                .: {}
+                f:k8s-app: {}
+                f:qcloud-app: {}
+            f:spec:
+              f:containers:
+                k:{"name":"postgres"}:
+                  .: {}
+                  f:image: {}
+                  f:imagePullPolicy: {}
+                  f:name: {}
+                  f:resources:
+                    .: {}
+                    f:limits:
+                      .: {}
+                      f:cpu: {}
+                      f:memory: {}
+                    f:requests:
+                      .: {}
+                      f:cpu: {}
+                      f:memory: {}
+                  f:terminationMessagePath: {}
+                  f:terminationMessagePolicy: {}
+                  f:volumeMounts:
+                    .: {}
+                    k:{"mountPath":"/data/postgres"}:
+                      .: {}
+                      f:mountPath: {}
+                      f:name: {}
+                    k:{"mountPath":"/docker-entrypoint-initdb.d/init.sql"}:
+                      .: {}
+                      f:mountPath: {}
+                      f:name: {}
+                      f:subPath: {}
+                    k:{"mountPath":"/docker-entrypoint-initdb.d/postgresql.conf"}:
+                      .: {}
+                      f:mountPath: {}
+                      f:name: {}
+                      f:subPath: {}
+              f:dnsPolicy: {}
+              f:restartPolicy: {}
+              f:schedulerName: {}
+              f:securityContext: {}
+              f:terminationGracePeriodSeconds: {}
+              f:volumes:
+                .: {}
+                k:{"name":"config-init"}:
+                  .: {}
+                  f:configMap:
+                    .: {}
+                    f:defaultMode: {}
+                    f:name: {}
+                  f:name: {}
+                k:{"name":"robin-cfs"}:
+                  .: {}
+                  f:name: {}
+                  f:nfs:
+                    .: {}
+                    f:path: {}
+                    f:server: {}
+          f:updateStrategy:
+            f:rollingUpdate:
+              .: {}
+              f:partition: {}
+            f:type: {}
+      manager: tke-platform-api
+      operation: Update
+      time: "2023-08-05T22:50:48Z"
+    - apiVersion: apps/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:status:
+          f:collisionCount: {}
+          f:currentReplicas: {}
+          f:currentRevision: {}
+          f:observedGeneration: {}
+          f:replicas: {}
+          f:updateRevision: {}
+          f:updatedReplicas: {}
+      manager: kube-controller-manager
+      operation: Update
+      time: "2023-08-05T22:51:04Z"
+  name: postgres
+  namespace: supernova
+  resourceVersion: "1161337004"
+  selfLink: /apis/apps/v1/namespaces/supernova/statefulsets/postgres
+  uid: fba38cab-36f2-40db-af90-a4313a2ca74f
+spec:
+  podManagementPolicy: OrderedReady
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      k8s-app: postgres
+      qcloud-app: postgres
+  serviceName: ""
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        k8s-app: postgres
+        qcloud-app: postgres
+    spec:
+      containers:
+        - image: postgres:latest
+          imagePullPolicy: Always
+          name: postgres
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              value: "970409"
+            - name: POSTGRES_DB
+              value: "postgres"
+          resources:
+            limits:
+              cpu: "15"
+              memory: 20000Mi
+            requests:
+              cpu: "10"
+              memory: 18000Mi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /data/postgres
+              name: robin-cfs
+            - mountPath: /docker-entrypoint-initdb.d/init.sql
+              name: config-init
+              subPath: init.sql
+            - mountPath: /docker-entrypoint-initdb.d/postgresql.conf
+              name: config-init
+              subPath: postgresql.conf
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: robin-cfs
+          nfs:
+            path: /7y4mvag2
+            server: 9.134.176.116
+        - configMap:
+            defaultMode: 420
+            name: postgres-init-script
+          name: config-init
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate
+status:
+  collisionCount: 0
+  currentReplicas: 1
+  currentRevision: postgres-59d46688d
+  observedGeneration: 1
+  replicas: 1
+  updateRevision: postgres-59d46688d
+  updatedReplicas: 1

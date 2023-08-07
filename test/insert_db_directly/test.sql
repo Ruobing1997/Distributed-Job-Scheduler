@@ -1,8 +1,8 @@
 DO $$
 DECLARE
-i INTEGER := 2000;
+i INTEGER := 0;
 BEGIN
-    WHILE i < 4000 LOOP
+    WHILE i < 100000 LOOP
         INSERT INTO job_full_info(
             id,
             job_name,
@@ -20,15 +20,15 @@ BEGIN
         ) VALUES (
             'job_' || i::TEXT,              -- 使用i作为id的后缀
             'Job Name ' || i::TEXT,         -- 使用i作为job_name的后缀
-            1,                              -- 假设的job_type
-            '* * * * * *',                  -- 每秒执行一次的cron表达式
+            0,                              -- 假设的job_type
+            '32 17 * * *',                  -- 执行一次的cron表达式
             0,                              -- execute_format为0
             'echo 1',                       -- 脚本内容
             '',                           -- callback_url，如果有可以填写
             1,                              -- 假设的job_status
-            NOW() + interval '1 minute',    -- 当前时间1分钟后作为执行时间
+            NOW() + interval '2 minute',    -- 当前时间1分钟后作为执行时间
             NOW(),                          -- 假设的上次执行时间为现在
-            NOW() + interval '1 minute',    -- 创建时间
+            NOW() + interval '2 minute',    -- 创建时间
             NOW(),                          -- 更新时间
             3                               -- 假设的重试次数
         );

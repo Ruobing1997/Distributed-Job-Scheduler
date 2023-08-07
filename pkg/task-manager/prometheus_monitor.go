@@ -16,10 +16,13 @@ var (
 		Help: "Total number of failed tasks.",
 	})
 
-	dispatchTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dispatch_total",
-		Help: "Total number of dispatches.",
-	})
+	dispatchTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "dispatch_total",
+			Help: "Total number of dispatches.",
+		},
+		[]string{"retrieve_from_manager"},
+	)
 
 	redisThroughput = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "redis_throughput_total",

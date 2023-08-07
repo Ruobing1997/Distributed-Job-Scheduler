@@ -158,9 +158,8 @@ func GetQLength() int64 {
 func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 	adjustedTime := time.Now().UTC()
 	var scoreRange = &redis.ZRangeBy{
-		Min:   "-inf",
-		Max:   fmt.Sprintf("%d", adjustedTime.Unix()),
-		Count: constants.BATCH_SIZE,
+		Min: "-inf",
+		Max: fmt.Sprintf("%d", adjustedTime.Unix()),
 	}
 	results, err := client.ZRangeByScoreWithScores(context.Background(), REDIS_PQ_KEY, scoreRange).Result()
 	if err != nil {

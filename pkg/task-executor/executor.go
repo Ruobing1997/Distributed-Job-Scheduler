@@ -151,6 +151,7 @@ func ExecuteTask(task *constants.TaskCache) (string, error) {
 		"function":    "ExecuteTask",
 		"taskID":      task.ID,
 		"executionID": task.ExecutionID,
+		"workerID":    workerID,
 	}).Infof("Received task with payload: format: %d, content: %s", task.Payload.Format, task.Payload.Script)
 	var err error
 	err = databaseClient.UpdateByExecutionID(context.Background(),
@@ -203,7 +204,8 @@ func handleSucceedFinish(err error, task *constants.TaskCache) {
 	tasksSuccessTotal.Inc()
 	err = databaseClient.UpdateByExecutionID(context.Background(),
 		constants.RUNNING_JOBS_RECORD, task.ExecutionID,
-		map[string]interface{}{"job_status": constants.JOBSUCCEED})
+		map[string]interface{}{"job_status": constants.JOBSUCCEED,
+			"worker_id": workerID})
 	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE",
 		"table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if err != nil {
@@ -228,7 +230,7 @@ func handleFailedFinish(task *constants.TaskCache, err error) {
 	}).Errorf("Task: %s failed with error: %v", task.ID, err)
 	err = databaseClient.UpdateByExecutionID(context.Background(),
 		constants.RUNNING_JOBS_RECORD, task.ExecutionID,
-		map[string]interface{}{"job_status": constants.JOBFAILED})
+		map[string]interface{}{"job_status": constants.JOBFAILED, "worker_id": workerID})
 	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE",
 		"table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if err != nil {

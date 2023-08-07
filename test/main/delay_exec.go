@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	BASE_URL         = "http://9.135.85.144:8080/api/generate"
-	TOTAL_REQUESTS   = 20000
+	BASE_URL         = "http://9.135.85.74:8080/api/generate"
+	TOTAL_REQUESTS   = 10000
 	DELAY_IN_MINUTES = 3
 )
 

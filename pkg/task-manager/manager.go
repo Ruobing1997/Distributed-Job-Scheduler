@@ -162,9 +162,9 @@ func InitLeaderElection(control ServerControlInterface) {
 	leaderelection.RunOrDie(context.Background(), leaderelection.LeaderElectionConfig{
 		Lock:            lock,
 		ReleaseOnCancel: true,
-		LeaseDuration:   60 * time.Second,
-		RenewDeadline:   30 * time.Second,
-		RetryPeriod:     5 * time.Second,
+		LeaseDuration:   5 * time.Second,
+		RenewDeadline:   3 * time.Second,
+		RetryPeriod:     1 * time.Second,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				logger.WithFields(logrus.Fields{
@@ -173,10 +173,10 @@ func InitLeaderElection(control ServerControlInterface) {
 					"PodIP":    os.Getenv("POD_IP"),
 				}).Info(fmt.Sprintf("manager: %v started leading", managerID))
 				updateEndpointsWithLeaderIP(os.Getenv("POD_IP"))
-				InitConnection()
-				PrometheusManagerInit()
-				go InitManagerGRPC()
-				Start()
+				//InitConnection()
+				//PrometheusManagerInit()
+				//go InitManagerGRPC()
+				//Start()
 				control.StartAPIServer()
 			},
 			OnStoppedLeading: func() {
@@ -651,6 +651,21 @@ func handleRecurringJobAfterDispatch(task *constants.TaskCache) {
 		"function": "handleRecurringJobAfterDispatch",
 	}).Infof("handle recurring job after dispatching task: %s", task.ID)
 	if task.JobType == constants.Recurring {
+		existingTask, err := databaseClient.GetTaskByID(context.Background(),
+			constants.TASKS_FULL_RECORD, task.ID)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"function": "handleRecurringJobAfterDispatch",
+				"error":    err,
+			}).Errorf("Failed to get task by ID: %s", task.ID)
+			return
+		}
+		if existingTask == nil {
+			logger.WithFields(logrus.Fields{
+				"function": "handleRecurringJobAfterDispatch",
+			}).Infof("task: %s not found in database", task.ID)
+			return
+		}
 		cronExpr := task.CronExpr
 		newExecutionTime := generator.DecryptCronExpress(cronExpr)
 		task.ExecutionTime = newExecutionTime
@@ -668,7 +683,7 @@ func handleRecurringJobAfterDispatch(task *constants.TaskCache) {
 
 // HandoutTasksForExecuting hands out tasks to workers for execution.
 func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
-	dispatchTotal.Inc()
+	dispatchTotal.With(prometheus.Labels{"retrieve_from_manager": managerID}).Inc()
 	logger.WithFields(logrus.Fields{
 		"function": "HandoutTasksForExecuting",
 	}).Infof("handout task: %s with job type %s", task.ID, constants.TypeMap[task.JobType])

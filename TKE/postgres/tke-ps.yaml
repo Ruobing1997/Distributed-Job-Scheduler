@@ -1,12 +1,26 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  creationTimestamp: "2023-08-05T22:50:48Z"
-  generation: 8
+  creationTimestamp: "2023-08-07T12:28:54Z"
+  generation: 3
   labels:
     k8s-app: postgres
     qcloud-app: postgres
   managedFields:
+    - apiVersion: apps/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:status:
+          f:collisionCount: {}
+          f:currentReplicas: {}
+          f:currentRevision: {}
+          f:observedGeneration: {}
+          f:replicas: {}
+          f:updateRevision: {}
+          f:updatedReplicas: {}
+      manager: kube-controller-manager
+      operation: Update
+      time: "2023-08-07T12:30:07Z"
     - apiVersion: apps/v1
       fieldsType: FieldsV1
       fieldsV1:
@@ -64,43 +78,11 @@ metadata:
                       f:memory: {}
                   f:terminationMessagePath: {}
                   f:terminationMessagePolicy: {}
-                  f:volumeMounts:
-                    .: {}
-                    k:{"mountPath":"/data/postgres"}:
-                      .: {}
-                      f:mountPath: {}
-                      f:name: {}
-                    k:{"mountPath":"/docker-entrypoint-initdb.d/init.sql"}:
-                      .: {}
-                      f:mountPath: {}
-                      f:name: {}
-                      f:subPath: {}
-                    k:{"mountPath":"/docker-entrypoint-initdb.d/postgresql.conf"}:
-                      .: {}
-                      f:mountPath: {}
-                      f:name: {}
-                      f:subPath: {}
               f:dnsPolicy: {}
               f:restartPolicy: {}
               f:schedulerName: {}
               f:securityContext: {}
               f:terminationGracePeriodSeconds: {}
-              f:volumes:
-                .: {}
-                k:{"name":"config-init"}:
-                  .: {}
-                  f:configMap:
-                    .: {}
-                    f:defaultMode: {}
-                    f:name: {}
-                  f:name: {}
-                k:{"name":"robin-cfs"}:
-                  .: {}
-                  f:name: {}
-                  f:nfs:
-                    .: {}
-                    f:path: {}
-                    f:server: {}
           f:updateStrategy:
             f:rollingUpdate:
               .: {}
@@ -108,25 +90,12 @@ metadata:
             f:type: {}
       manager: tke-platform-api
       operation: Update
-      time: "2023-08-07T10:09:22Z"
-    - apiVersion: apps/v1
-      fieldsType: FieldsV1
-      fieldsV1:
-        f:status:
-          f:collisionCount: {}
-          f:currentRevision: {}
-          f:observedGeneration: {}
-          f:replicas: {}
-          f:updateRevision: {}
-          f:updatedReplicas: {}
-      manager: kube-controller-manager
-      operation: Update
-      time: "2023-08-07T10:11:46Z"
+      time: "2023-08-07T12:30:07Z"
   name: postgres
   namespace: supernova
-  resourceVersion: "1169373030"
+  resourceVersion: "1169916769"
   selfLink: /apis/apps/v1/namespaces/supernova/statefulsets/postgres
-  uid: fba38cab-36f2-40db-af90-a4313a2ca74f
+  uid: 704a4f01-e443-4d9c-aab4-5a5625c75a94
 spec:
   podManagementPolicy: OrderedReady
   replicas: 1
@@ -163,44 +132,27 @@ spec:
           name: postgres
           resources:
             limits:
-              cpu: "15"
-              memory: 20000Mi
+              cpu: "10"
+              memory: 40Gi
             requests:
               cpu: "10"
-              memory: 18000Mi
+              memory: 20Gi
           terminationMessagePath: /dev/termination-log
           terminationMessagePolicy: File
-          volumeMounts:
-            - mountPath: /data/postgres
-              name: robin-cfs
-            - mountPath: /docker-entrypoint-initdb.d/init.sql
-              name: config-init
-              subPath: init.sql
-            - mountPath: /docker-entrypoint-initdb.d/postgresql.conf
-              name: config-init
-              subPath: postgresql.conf
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
       terminationGracePeriodSeconds: 30
-      volumes:
-        - name: robin-cfs
-          nfs:
-            path: /7y4mvag2
-            server: 9.134.176.116
-        - configMap:
-            defaultMode: 420
-            name: postgres-init-script
-          name: config-init
   updateStrategy:
     rollingUpdate:
       partition: 0
     type: RollingUpdate
 status:
   collisionCount: 0
-  currentRevision: postgres-54b7dbbdcb
-  observedGeneration: 8
+  currentReplicas: 1
+  currentRevision: postgres-7f89b98497
+  observedGeneration: 3
   replicas: 1
-  updateRevision: postgres-5867c7878d
+  updateRevision: postgres-7f89b98497
   updatedReplicas: 1

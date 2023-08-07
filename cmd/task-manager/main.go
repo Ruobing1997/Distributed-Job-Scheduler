@@ -43,6 +43,10 @@ var startCmd = &cobra.Command{
 		fmt.Println("***********************************************************")
 		managerControl := &ServerControl{}
 		fmt.Println("MorFun_SuperNova Manager Start Leader Election")
+		task_manager.InitConnection()
+		task_manager.PrometheusManagerInit()
+		go task_manager.InitManagerGRPC()
+		task_manager.Start()
 		task_manager.InitLeaderElection(managerControl)
 	},
 }

@@ -1,3 +1,6 @@
+// Package postgreSQL
+// Provides the implementation of the databasehandler interface for PostgreSQL.
+// It provides the CRUD operations for the database.
 package postgreSQL
 
 import (
@@ -19,7 +22,7 @@ type Client struct {
 	db *sql.DB
 }
 
-// NewMySQLClient initializes the connection to MySQL database.
+// NewpostgreSQLClient initializes the connection to Postgres database.
 func NewpostgreSQLClient() *Client {
 	postgresURL := os.Getenv("POSTGRES_URL")
 	postgresPassWord := os.Getenv("POSTGRES_PASSWORD")
@@ -34,6 +37,7 @@ func NewpostgreSQLClient() *Client {
 	return &Client{db: db}
 }
 
+// InsertTask inserts a task into the database.
 func (c *Client) InsertTask(ctx context.Context, table string, record databasehandler.DataRecord) error {
 	var err error
 	switch table {
@@ -77,6 +81,7 @@ func (c *Client) InsertTask(ctx context.Context, table string, record databaseha
 	return nil
 }
 
+// GetTaskByID gets a task from the database by ID.
 func (c *Client) GetTaskByID(ctx context.Context, table string, id string, args ...interface{}) (databasehandler.DataRecord, error) {
 	log.Printf("Database Received GetTaskByID request for table %s and id %s", table, id)
 	switch table {
@@ -124,10 +129,12 @@ func (c *Client) GetTaskByID(ctx context.Context, table string, id string, args 
 	return nil, errors.New("invalid table name")
 }
 
+// Close closes the connection to the database.
 func (c *Client) Close() error {
 	return c.db.Close()
 }
 
+// GetTasksInInterval gets all tasks in the given interval.
 func (c *Client) GetTasksInInterval(startTime time.Time, endTime time.Time, timeTracker time.Time) ([]*constants.TaskDB, error) {
 	query := `SELECT * FROM job_full_info WHERE execution_time BETWEEN $1 AND $2 AND create_time >= $3`
 	rows, err := c.db.Query(query, startTime, endTime, timeTracker)
@@ -159,6 +166,7 @@ func (c *Client) GetTasksInInterval(startTime time.Time, endTime time.Time, time
 	return tasks, nil
 }
 
+// DeleteByID deletes a task from the database by ID.
 func (c *Client) DeleteByID(ctx context.Context, table string, id string) error {
 	query := `DELETE FROM ` + table + ` WHERE id = $1`
 	_, err := c.db.ExecContext(ctx, query, id)
@@ -168,6 +176,7 @@ func (c *Client) DeleteByID(ctx context.Context, table string, id string) error 
 	return nil
 }
 
+// UpdateByID updates a task in the database by ID.
 func (c *Client) UpdateByID(ctx context.Context, table string, id string,
 	args map[string]interface{}) error {
 	var setValues []string
@@ -188,6 +197,7 @@ func (c *Client) UpdateByID(ctx context.Context, table string, id string,
 	return nil
 }
 
+// UpdateByExecutionID updates a task in the database by execution ID.
 func (c *Client) UpdateByExecutionID(ctx context.Context, table string, execID string,
 	args map[string]interface{}) error {
 	var setValues []string
@@ -210,6 +220,7 @@ func (c *Client) UpdateByExecutionID(ctx context.Context, table string, execID s
 
 }
 
+// GetAllTasks gets all tasks from the database.
 func (c *Client) GetAllTasks() ([]*constants.TaskDB, error) {
 	query := `SELECT * FROM job_full_info`
 	rows, err := c.db.Query(query)
@@ -239,6 +250,7 @@ func (c *Client) GetAllTasks() ([]*constants.TaskDB, error) {
 	return tasks, nil
 }
 
+// GetAllRunningTasks gets all running tasks from the database.
 func (c *Client) GetAllRunningTasks() ([]*constants.RunTimeTask, error) {
 	query := `SELECT * FROM running_tasks_record`
 	rows, err := c.db.Query(query)
@@ -269,6 +281,7 @@ func (c *Client) GetAllRunningTasks() ([]*constants.RunTimeTask, error) {
 	return runTimeTasks, nil
 }
 
+// CountRunningTasks counts the number of running tasks for a given job ID.
 func (c *Client) CountRunningTasks(ctx context.Context, idValue string) (int, error) {
 	var count int
 	err := c.db.QueryRow(CountRunningTasks, idValue).Scan(&count)
@@ -278,6 +291,7 @@ func (c *Client) CountRunningTasks(ctx context.Context, idValue string) (int, er
 	return count, nil
 }
 
+// GetTaskHistoryByID gets the task history from the database by ID.
 func (c *Client) GetTaskHistoryByID(ctx context.Context, taskID string) ([]*constants.RunTimeTask, error) {
 	query := `SELECT * FROM running_tasks_record WHERE id = $1`
 

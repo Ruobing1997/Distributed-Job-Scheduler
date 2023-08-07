@@ -155,14 +155,8 @@ const RENEW_LEASE_GRPC_TIMEOUT = time.Second
 
 const LEASE_DURATION = 2 * time.Second
 const LEASE_RENEW_INTERVAL = 5 * time.Second // renew lease every 1 second
-const OFFSET = 10000
 const BATCH_SIZE = 5000
 const TIMEOUT = 10 * time.Second
-const SHARDSAMOUNT = 6
-const EIGHTBIT = 8
-const SIXTEENBIT = 16
-const TWENTYFOURBIT = 24
-const REDISPORTOFFSET = 6900
 const RUNNING_JOBS_RECORD = "running_tasks_record"
 const TASKS_FULL_RECORD = "job_full_info"
 const TASKID_TO_EXECID = "taskid_execid_mapping"

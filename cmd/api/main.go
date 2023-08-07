@@ -1,3 +1,4 @@
+// main function for the api service is the entry point of api server
 package main
 
 import (
@@ -20,6 +21,9 @@ var (
 	)
 )
 
+// setupReverseProxy is a function that returns a gin.HandlerFunc (which is
+// a type alias for func(*gin.Context)). When called, it will make a request
+// to the url provided in the path portion of the incoming url.
 func setupReverseProxy(target string) gin.HandlerFunc {
 	targetURL, _ := url.Parse(target)
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
@@ -32,6 +36,7 @@ func setupReverseProxy(target string) gin.HandlerFunc {
 	}
 }
 
+// main is the entrypoint of the application.
 func main() {
 	r := gin.Default()
 	prometheus.MustRegister(HttpRequestsTotal)

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   creationTimestamp: "2023-08-05T22:50:48Z"
-  generation: 1
+  generation: 8
   labels:
     k8s-app: postgres
     qcloud-app: postgres
@@ -34,6 +34,21 @@ metadata:
               f:containers:
                 k:{"name":"postgres"}:
                   .: {}
+                  f:command: {}
+                  f:env:
+                    .: {}
+                    k:{"name":"POSTGRES_DB"}:
+                      .: {}
+                      f:name: {}
+                      f:value: {}
+                    k:{"name":"POSTGRES_PASSWORD"}:
+                      .: {}
+                      f:name: {}
+                      f:value: {}
+                    k:{"name":"POSTGRES_USER"}:
+                      .: {}
+                      f:name: {}
+                      f:value: {}
                   f:image: {}
                   f:imagePullPolicy: {}
                   f:name: {}
@@ -93,13 +108,12 @@ metadata:
             f:type: {}
       manager: tke-platform-api
       operation: Update
-      time: "2023-08-05T22:50:48Z"
+      time: "2023-08-07T10:09:22Z"
     - apiVersion: apps/v1
       fieldsType: FieldsV1
       fieldsV1:
         f:status:
           f:collisionCount: {}
-          f:currentReplicas: {}
           f:currentRevision: {}
           f:observedGeneration: {}
           f:replicas: {}
@@ -107,10 +121,10 @@ metadata:
           f:updatedReplicas: {}
       manager: kube-controller-manager
       operation: Update
-      time: "2023-08-05T22:51:04Z"
+      time: "2023-08-07T10:11:46Z"
   name: postgres
   namespace: supernova
-  resourceVersion: "1161337004"
+  resourceVersion: "1169373030"
   selfLink: /apis/apps/v1/namespaces/supernova/statefulsets/postgres
   uid: fba38cab-36f2-40db-af90-a4313a2ca74f
 spec:
@@ -130,16 +144,23 @@ spec:
         qcloud-app: postgres
     spec:
       containers:
-        - image: postgres:latest
-          imagePullPolicy: Always
-          name: postgres
+        - command:
+            - postgres
+            - -c
+            - max_connections=100000
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
           env:
             - name: POSTGRES_USER
-              value: "postgres"
+              value: postgres
             - name: POSTGRES_PASSWORD
               value: "970409"
             - name: POSTGRES_DB
-              value: "postgres"
+              value: postgres
+          image: postgres:latest
+          imagePullPolicy: Always
+          name: postgres
           resources:
             limits:
               cpu: "15"
@@ -178,9 +199,8 @@ spec:
     type: RollingUpdate
 status:
   collisionCount: 0
-  currentReplicas: 1
-  currentRevision: postgres-59d46688d
-  observedGeneration: 1
+  currentRevision: postgres-54b7dbbdcb
+  observedGeneration: 8
   replicas: 1
-  updateRevision: postgres-59d46688d
+  updateRevision: postgres-5867c7878d
   updatedReplicas: 1

@@ -1,19 +1,17 @@
-/*
-Package generator is used to generate update for update manager.
-It will handle the error cases and generate a formatted update.
-*/
+// Package generator is used to generate update for update manager.
+// It will handle the error cases and generate a formatted update.
+
 package generator
 
 import (
-	"encoding/json"
 	"fmt"
 	"git.woa.com/robingowang/MoreFun_SuperNova/utils/constants"
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
-	"log"
 	"time"
 )
 
+// GenerateTask is used to generate a task for task manager.
 func GenerateTask(jobName string, jobType int, cronExpr string, format int,
 	script string, retries int) *constants.TaskDB {
 	id := uuid.New().String()
@@ -21,6 +19,7 @@ func GenerateTask(jobName string, jobType int, cronExpr string, format int,
 	return taskDB
 }
 
+// generateTaskDB is used to generate a task for database record.
 func generateTaskDB(id string, jobName string, jobType int, cronExpr string, format int,
 	script string, retries int) *constants.TaskDB {
 	executionTime := DecryptCronExpress(cronExpr)
@@ -43,10 +42,12 @@ func generateTaskDB(id string, jobName string, jobType int, cronExpr string, for
 	return &taskDB
 }
 
+// GenerateCallBackURL is used to generate a callback url for task manager.
 func GenerateCallBackURL(id string, domain string) string {
 	return fmt.Sprintf("http://%s:8080/tasks/status/%s", domain, id)
 }
 
+// DecryptCronExpress is used to decrypt cron expression to execution time.
 func DecryptCronExpress(cronExpr string) time.Time {
 	parser := cron.NewParser(cron.SecondOptional | cron.Minute |
 		cron.Hour | cron.Dom | cron.Month | cron.Dow)
@@ -58,7 +59,7 @@ func DecryptCronExpress(cronExpr string) time.Time {
 	return executionTime
 }
 
-// TODO: update content of update cache when determine the structure of update cache
+// GenerateTaskCache is used to generate a task cache to store in redis.
 func GenerateTaskCache(id string, jobType int, cronExpr string,
 	executionTime time.Time, retriesLeft int, payload *constants.Payload) *constants.TaskCache {
 	return &constants.TaskCache{
@@ -71,10 +72,12 @@ func GenerateTaskCache(id string, jobType int, cronExpr string,
 	}
 }
 
+// GenerateExecutionID is used to generate a execution id for task manager.
 func GenerateExecutionID() string {
 	return uuid.New().String()
 }
 
+// GeneratePayload is used to generate a payload for task.
 func GeneratePayload(jobType int, script string) *constants.Payload {
 	return &constants.Payload{
 		Format: jobType,
@@ -82,10 +85,9 @@ func GeneratePayload(jobType int, script string) *constants.Payload {
 	}
 }
 
+// GenerateRunTimeTaskThroughTaskCache is used to generate a runtime task from task cache for task manager.
 func GenerateRunTimeTaskThroughTaskCache(task *constants.TaskCache,
 	jobStatus int, workerID string) *constants.RunTimeTask {
-	log.Printf("-------------------------------------------------")
-	log.Printf("GenerateRunTimeTaskThroughTaskCache: %v", task)
 	runningTaskInfo := &constants.RunTimeTask{
 		ID:            task.ID,
 		ExecutionTime: task.ExecutionTime,
@@ -98,12 +100,4 @@ func GenerateRunTimeTaskThroughTaskCache(task *constants.TaskCache,
 	}
 	runningTaskInfo.Payload = GeneratePayload(task.Payload.Format, task.Payload.Script)
 	return runningTaskInfo
-}
-
-func marshallTask(task constants.TaskDB) []byte {
-	taskJson, err := json.Marshal(task)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return taskJson
 }

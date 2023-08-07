@@ -1,3 +1,7 @@
+// main for task-manager service is the entry point of manager server
+// it provides access using cobra.
+// And it will start a http server to provide api.
+// It uses kubernetes leader election to make sure only one manager is working.
 package main
 
 import (

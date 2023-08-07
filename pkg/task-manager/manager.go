@@ -1,3 +1,6 @@
+// Package task_manager
+// task manager serves as a task scheduler.
+// It will dispatch tasks using grpc and update the status of tasks accordingly.
 package task_manager
 
 import (
@@ -58,6 +61,7 @@ type ServerControlInterface interface {
 	StopAPIServer() error
 }
 
+// InitConnection initializes the connection to the database and redis.
 func InitConnection() {
 	timeTracker = time.Now().UTC()
 	logFile, err := os.OpenFile("./logs/managers/manager-"+managerID+".log",
@@ -76,6 +80,7 @@ func InitConnection() {
 	redisClient = data_structure_redis.Init()
 }
 
+// InitManagerGRPC initializes the grpc server for manager.
 func InitManagerGRPC() {
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
@@ -97,6 +102,7 @@ func InitManagerGRPC() {
 	}
 }
 
+// getGRPCConnection gets a grpc connection from the pool.
 func getGRPCConnection(workerService string) (*clientWrapper, error) {
 	poolMutex.Lock()
 	defer poolMutex.Unlock()
@@ -115,6 +121,7 @@ func getGRPCConnection(workerService string) (*clientWrapper, error) {
 	return &clientWrapper{Conn: conn, Client: client}, nil
 }
 
+// releaseGRPCConnection releases a grpc connection to the pool.
 func releaseGRPCConnection(wrapper *clientWrapper) {
 	poolMutex.Lock()
 	defer poolMutex.Unlock()
@@ -122,6 +129,7 @@ func releaseGRPCConnection(wrapper *clientWrapper) {
 	connPool = append(connPool, *wrapper)
 }
 
+// InitLeaderElection initializes the leader election for manager.
 func InitLeaderElection(control ServerControlInterface) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -177,26 +185,7 @@ func InitLeaderElection(control ServerControlInterface) {
 					"manager":  managerID,
 				}).Info("Manager stopped leading")
 
-				if err := databaseClient.Close(); err != nil {
-					logger.WithFields(logrus.Fields{
-						"function": "OnStoppedLeading",
-						"error":    err,
-					}).Error("Error closing database client")
-				}
-
-				if err := redisClient.Close(); err != nil {
-					logger.WithFields(logrus.Fields{
-						"function": "OnStoppedLeading",
-						"error":    err,
-					}).Error("Error closing redis client")
-				}
-
-				if err := control.StopAPIServer(); err != nil {
-					logger.WithFields(logrus.Fields{
-						"function": "OnStoppedLeading",
-						"error":    err,
-					}).Error("Error stopping API server")
-				}
+				handleWhenManagerShutDown(control)
 			},
 			OnNewLeader: func(identity string) {
 				if identity != managerID {
@@ -210,6 +199,7 @@ func InitLeaderElection(control ServerControlInterface) {
 	})
 }
 
+// Start starts the manager with goroutines.
 func Start() {
 	startedChan := make(chan bool, 4)
 	var wg sync.WaitGroup
@@ -253,31 +243,14 @@ func Start() {
 	}
 }
 
-func addNewJobToRedis(taskDB *constants.TaskDB) {
-	// generate update for cache:
-	taskCache := generator.GenerateTaskCache(
-		taskDB.ID,
-		taskDB.JobType,
-		taskDB.CronExpr,
-		taskDB.ExecutionTime,
-		taskDB.Retries,
-		taskDB.Payload)
-	taskCache.ExecutionID = generator.GenerateExecutionID()
-	redisThroughput.Inc()
-	data_structure_redis.AddJob(taskCache)
-	logger.WithFields(logrus.Fields{
-		"function": "addNewJobToRedis",
-		"taskID":   taskCache.ID,
-		"QLen":     data_structure_redis.GetQLength(),
-	}).Info("added new job to redis")
-}
-
+// updateEndpointsWithLeaderIP updates the endpoints with leader IP.
+// It is used to bind manager with api server.
 func updateEndpointsWithLeaderIP(podIP string) {
-	// 创建 Kubernetes 客户端
 	config, _ := rest.InClusterConfig()
 	clientset, _ := kubernetes.NewForConfig(config)
 	endpointsClient := clientset.CoreV1().Endpoints("supernova")
-	currentEndpoints, err := endpointsClient.Get(context.TODO(), "manager", metav1.GetOptions{})
+	currentEndpoints, err := endpointsClient.Get(context.TODO(),
+		"manager", metav1.GetOptions{})
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"function": "updateEndpointsWithLeaderIP",
@@ -306,7 +279,8 @@ func updateEndpointsWithLeaderIP(podIP string) {
 		},
 	}
 
-	_, err = endpointsClient.Update(context.TODO(), currentEndpoints, metav1.UpdateOptions{})
+	_, err = endpointsClient.Update(context.TODO(), currentEndpoints,
+		metav1.UpdateOptions{})
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"function": "updateEndpointsWithLeaderIP",
@@ -316,6 +290,7 @@ func updateEndpointsWithLeaderIP(podIP string) {
 	}
 }
 
+// HandleNewTasks handles new tasks.
 func HandleNewTasks(name string, taskType int, cronExpression string,
 	format int, script string, callBackURL string, retries int) (string, error) {
 	tasksTotal.Inc()
@@ -333,7 +308,8 @@ func HandleNewTasks(name string, taskType int, cronExpression string,
 
 	// Goroutine for inserting into database
 	go func() {
-		err := databaseClient.InsertTask(context.Background(), constants.TASKS_FULL_RECORD, taskDB)
+		err := databaseClient.InsertTask(context.Background(),
+			constants.TASKS_FULL_RECORD, taskDB)
 		postgresqlOpsTotal.With(prometheus.Labels{"operation": "INSERT", "table": constants.TASKS_FULL_RECORD}).Inc()
 		dbErrCh <- err
 	}()
@@ -364,6 +340,7 @@ func HandleNewTasks(name string, taskType int, cronExpression string,
 	return taskDB.ID, nil
 }
 
+// HandleDeleteTasks handles delete tasks.
 func HandleDeleteTasks(taskID string) error {
 	logger.WithFields(logrus.Fields{
 		"function": "HandleDeleteTasks",
@@ -399,13 +376,17 @@ func HandleDeleteTasks(taskID string) error {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			databaseClient.DeleteByID(context.Background(), constants.TASKS_FULL_RECORD, taskID)
-			postgresqlOpsTotal.With(prometheus.Labels{"operation": "DELETE", "table": constants.TASKS_FULL_RECORD}).Inc()
+			databaseClient.DeleteByID(context.Background(),
+				constants.TASKS_FULL_RECORD, taskID)
+			postgresqlOpsTotal.With(prometheus.Labels{"operation": "DELETE", "" +
+				"table": constants.TASKS_FULL_RECORD}).Inc()
 		}()
 		go func() {
 			defer wg.Done()
-			databaseClient.DeleteByID(context.Background(), constants.RUNNING_JOBS_RECORD, taskID)
-			postgresqlOpsTotal.With(prometheus.Labels{"operation": "DELETE", "table": constants.RUNNING_JOBS_RECORD}).Inc()
+			databaseClient.DeleteByID(context.Background(),
+				constants.RUNNING_JOBS_RECORD, taskID)
+			postgresqlOpsTotal.With(prometheus.Labels{"operation": "DELETE",
+				"table": constants.RUNNING_JOBS_RECORD}).Inc()
 		}()
 
 		// Wait for all delete operations to finish
@@ -421,6 +402,7 @@ func HandleDeleteTasks(taskID string) error {
 	}
 }
 
+// HandleUpdateTasks handles update tasks.
 func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 	logger.WithFields(logrus.Fields{
 		"function": "HandleUpdateTasks",
@@ -447,9 +429,10 @@ func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 			taskCache.ExecutionTime = generator.DecryptCronExpress(value.(string))
 		}
 	}
-	// if the task is in database, update it in database
-	err := databaseClient.UpdateByID(context.Background(), constants.TASKS_FULL_RECORD, taskID, args)
-	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE", "table": constants.TASKS_FULL_RECORD}).Inc()
+	err := databaseClient.UpdateByID(context.Background(),
+		constants.TASKS_FULL_RECORD, taskID, args)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE",
+		"table": constants.TASKS_FULL_RECORD}).Inc()
 	if err != nil {
 		logger.WithFields(logrus.Fields{
 			"function": "HandleUpdateTasks",
@@ -457,10 +440,7 @@ func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 		}).Errorf("update task %s failed: %v", taskID, err)
 		return fmt.Errorf("update task %s failed: %v", taskID, err)
 	}
-	// database updated successfully then add job
 	if data_structure_redis.CheckTasksInDuration(taskCache.ExecutionTime, DURATION) {
-		// insert update to priority queue
-		// 更新完按照新任务处理
 		taskCache.ExecutionID = generator.GenerateExecutionID()
 		redisThroughput.Inc()
 		logger.WithFields(logrus.Fields{
@@ -472,55 +452,65 @@ func HandleUpdateTasks(taskID string, args map[string]interface{}) error {
 	return nil
 }
 
+// HandleGetTasks handles get tasks.
 func HandleGetTasks(taskID string) (*constants.TaskDB, error) {
 	logger.WithFields(logrus.Fields{
 		"function": "HandleGetTasks",
 		"taskID":   taskID,
 	}).Info("get task")
-	record, err := databaseClient.GetTaskByID(context.Background(), constants.TASKS_FULL_RECORD, taskID)
-	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.TASKS_FULL_RECORD}).Inc()
+	record, err := databaseClient.GetTaskByID(context.Background(),
+		constants.TASKS_FULL_RECORD, taskID)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET",
+		"table": constants.TASKS_FULL_RECORD}).Inc()
 	if err != nil {
 		return nil, err
 	}
 	return record.(*constants.TaskDB), nil
 }
 
+// HandleGetAllTasks handles get all tasks.
 func HandleGetAllTasks() ([]*constants.TaskDB, error) {
 	logger.WithFields(logrus.Fields{
 		"function": "HandleGetAllTasks",
 	}).Info("get all tasks")
 	tasks, err := databaseClient.GetAllTasks()
-	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.TASKS_FULL_RECORD}).Inc()
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET",
+		"table": constants.TASKS_FULL_RECORD}).Inc()
 	if err != nil {
 		return nil, err
 	}
 	return tasks, nil
 }
 
+// HandleGetRunningTasks handles get running tasks.
 func HandleGetRunningTasks() ([]*constants.RunTimeTask, error) {
 	logger.WithFields(logrus.Fields{
 		"function": "HandleGetRunningTasks",
 	}).Info("get all running tasks")
 	tasks, err := databaseClient.GetAllRunningTasks()
-	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.RUNNING_JOBS_RECORD}).Inc()
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET",
+		"table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if err != nil {
 		return nil, err
 	}
 	return tasks, nil
 }
 
+// HandleGetTaskHistory handles get task history with id.
 func HandleGetTaskHistory(taskID string) ([]*constants.RunTimeTask, error) {
 	logger.WithFields(logrus.Fields{
 		"function": "HandleGetTaskHistory",
 	}).Info("get task history")
 	records, err := databaseClient.GetTaskHistoryByID(context.Background(), taskID)
-	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.RUNNING_JOBS_RECORD}).Inc()
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET",
+		"table": constants.RUNNING_JOBS_RECORD}).Inc()
 	if err != nil {
 		return nil, err
 	}
 	return records, nil
 }
 
+// AddTasksFromDBWithTickers adds tasks from database with tickers.
 func AddTasksFromDBWithTickers() {
 	logger.WithFields(logrus.Fields{
 		"function":       "AddTasksFromDBWithTickers",
@@ -528,8 +518,10 @@ func AddTasksFromDBWithTickers() {
 		"End: ":          time.Now().UTC().Add(DURATION),
 		"Time Tracker: ": timeTracker,
 	}).Info("add tasks from database with tickers")
-	tasks, _ := databaseClient.GetTasksInInterval(time.Now().UTC(), time.Now().UTC().Add(DURATION), timeTracker)
-	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.TASKS_FULL_RECORD}).Inc()
+	tasks, _ := databaseClient.GetTasksInInterval(time.Now().UTC(),
+		time.Now().UTC().Add(DURATION), timeTracker)
+	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET",
+		"table": constants.TASKS_FULL_RECORD}).Inc()
 	timeTracker = time.Now().UTC()
 	for _, task := range tasks {
 		logger.WithFields(logrus.Fields{
@@ -539,6 +531,7 @@ func AddTasksFromDBWithTickers() {
 	}
 }
 
+// SubscribeToRedisChannel subscribes to redis channel.
 func SubscribeToRedisChannel() {
 	logger.WithFields(logrus.Fields{
 		"function": "SubscribeToRedisChannel",
@@ -580,11 +573,9 @@ func SubscribeToRedisChannel() {
 	}
 }
 
-// handleTask 处理任务的主要逻辑，比较复杂
-// 包含三个功能，redis的插入和数据库的插入是并发的，
-// HandoutTasksForExecuting调用了grpc，也并发，
-// handlejobfailed收到HandoutTasksForExecuting返回的结果相应的处理fail的状态
-// 不管结果如何, 需要安排下一次任务
+// handleTask is the main logic for handling tasks.
+// It will insert the task into the database, set the lease in Redis,
+// and handout the task to the worker. All of these are done asynchronously.
 func handleTask(ctx context.Context, task *constants.TaskCache) {
 	logger.WithFields(logrus.Fields{
 		"function": "handleTask",
@@ -598,7 +589,8 @@ func handleTask(ctx context.Context, task *constants.TaskCache) {
 
 	// Concurrently insert into the database
 	go func() {
-		err := databaseClient.InsertTask(context.Background(), constants.RUNNING_JOBS_RECORD, runningTaskInfo)
+		err := databaseClient.InsertTask(context.Background(),
+			constants.RUNNING_JOBS_RECORD, runningTaskInfo)
 		dbInsertDone <- err
 	}()
 
@@ -653,6 +645,7 @@ func handleTask(ctx context.Context, task *constants.TaskCache) {
 	}()
 }
 
+// handleRecurringJobAfterDispatch handles the recurring job after dispatching.
 func handleRecurringJobAfterDispatch(task *constants.TaskCache) {
 	logger.WithFields(logrus.Fields{
 		"function": "handleRecurringJobAfterDispatch",
@@ -673,6 +666,7 @@ func handleRecurringJobAfterDispatch(task *constants.TaskCache) {
 	}
 }
 
+// HandoutTasksForExecuting hands out tasks to workers for execution.
 func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 	dispatchTotal.Inc()
 	logger.WithFields(logrus.Fields{
@@ -743,6 +737,7 @@ func HandoutTasksForExecuting(task *constants.TaskCache) (string, int, error) {
 	return r.Id, int(r.Status), nil
 }
 
+// MonitorHeadNode monitors the head node.
 func MonitorHeadNode() {
 	logger.WithFields(logrus.Fields{
 		"function": "MonitorHeadNode",
@@ -763,6 +758,7 @@ func MonitorHeadNode() {
 	}
 }
 
+// handleJobFailed handles the job failed case.
 func handleJobFailed(ctx context.Context, task *constants.TaskCache, jobStatusCode int) error {
 	logger.WithFields(logrus.Fields{
 		"function": "handleJobFailed",
@@ -776,6 +772,7 @@ func handleJobFailed(ctx context.Context, task *constants.TaskCache, jobStatusCo
 	return handleRescheduleFailedJob(ctx, task)
 }
 
+// handleRescheduleFailedJob handles the reschedule failed job case.
 func handleRescheduleFailedJob(ctx context.Context, task *constants.TaskCache) error {
 	// update not completely failed, update the retries left, time
 	// and add to redis priority queue
@@ -796,6 +793,7 @@ func handleRescheduleFailedJob(ctx context.Context, task *constants.TaskCache) e
 	return nil
 }
 
+// handleCompletelyFailedJob handles the completely failed job case.
 func handleCompletelyFailedJob(ctx context.Context, task *constants.TaskCache, jobStatusCode int) error {
 	logger.WithFields(logrus.Fields{
 		"function": "handleCompletelyFailedJob",
@@ -842,7 +840,6 @@ func RescheduleFailedJobs(task *constants.TaskCache) error {
 	postgresqlOpsTotal.With(prometheus.Labels{"operation": "UPDATE", "table": constants.RUNNING_JOBS_RECORD}).Inc()
 
 	task.RetriesLeft = curRetries
-	// 此时执行ID不应该发生变化，因为是同一个job的重试逻辑
 	data_structure_redis.AddRetry(task)
 	logger.WithFields(logrus.Fields{
 		"function": "RescheduleFailedJobs",
@@ -852,35 +849,6 @@ func RescheduleFailedJobs(task *constants.TaskCache) error {
 	return nil
 }
 
-func checkJobCompletelyFailed(data interface{}) bool {
-	jobType, retriesLeft, executionTime := getJobInfo(data)
-	if jobType == constants.OneTime {
-		if checkOneTimeJobOutdated(executionTime) {
-			// update completely failed need to update all information for report user.
-			return true
-		} else {
-			return retriesLeft <= 0
-		}
-	} else {
-		if checkRecurringJobOutdated(executionTime) {
-			return true
-		} else {
-			return retriesLeft <= 0
-		}
-	}
-}
-
-// check if the update is outdated, current time is later than the execution time
-func checkOneTimeJobOutdated(executionTime time.Time) bool {
-	diff := time.Now().UTC().Sub(executionTime)
-	return diff > constants.ONE_TIME_JOB_RETRY_TIME
-}
-
-func checkRecurringJobOutdated(executionTime time.Time) bool {
-	diff := time.Now().UTC().Sub(executionTime)
-	return diff > constants.RECURRING_JOB_RETRY_TIME
-}
-
 // HandleExpiryTasks handles the expiry tasks
 func HandleExpiryTasks(msg *redis.Message) {
 	// The expected key format is "lease:task:<taskID>execute:<execID>"
@@ -888,7 +856,7 @@ func HandleExpiryTasks(msg *redis.Message) {
 	suffix := "execute:"
 
 	if strings.HasPrefix(msg.Payload, prefix) {
-		trimmedStr := strings.TrimPrefix(msg.Payload, prefix) // removing "lease:task:" prefix
+		trimmedStr := strings.TrimPrefix(msg.Payload, prefix)
 		splitIndex := strings.Index(trimmedStr, suffix)
 
 		if splitIndex == -1 {
@@ -909,14 +877,15 @@ func HandleExpiryTasks(msg *redis.Message) {
 	}
 }
 
+// HandleUnRenewLeaseJobThroughDB handles the un renew lease job through db.
+// if job type is one time, directly return fail
+// if job type is recur, check retry times
+// if > 0, reenter queue, update redis, db; otherwise return fail
 func HandleUnRenewLeaseJobThroughDB(id string) error {
 	logger.WithFields(logrus.Fields{
 		"function": "HandleUnRenewLeaseJobThroughDB",
 	}).Infof("Handle un renew lease job exec id: %s", id)
-	// check job type (through runtime db table)
-	// if job type is one time, directly return fail
-	// if job type is recur, check retry times
-	// if > 0, reenter queue, update redis, db; otherwise return fail
+
 	record, err := databaseClient.GetTaskByID(context.Background(), constants.RUNNING_JOBS_RECORD, id)
 
 	postgresqlOpsTotal.With(prometheus.Labels{"operation": "GET", "table": constants.RUNNING_JOBS_RECORD}).Inc()
@@ -964,17 +933,7 @@ func HandleUnRenewLeaseJobThroughDB(id string) error {
 	return nil
 }
 
-func getJobInfo(data interface{}) (int, int, time.Time) {
-	switch v := data.(type) {
-	case *constants.TaskCache:
-		return v.JobType, v.RetriesLeft, v.ExecutionTime
-	case *constants.RunTimeTask:
-		return v.JobType, v.RetriesLeft, v.ExecutionTime
-	default:
-		panic("unsupported data type")
-	}
-}
-
+// ListenForExpiryNotifications listens for expiry notifications.
 func ListenForExpiryNotifications() {
 	logger.WithFields(logrus.Fields{
 		"function": "ListenForExpiryNotifications",
@@ -995,6 +954,8 @@ func ListenForExpiryNotifications() {
 	}
 }
 
+// NotifyTaskStatus handles the task status notification from workers.
+// It will update the task status in the database and remove the lease from Redis.
 func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 	in *pb.NotifyMessageRequest) (*pb.NotifyMessageResponse, error) {
 	logger.WithFields(logrus.Fields{
@@ -1049,6 +1010,37 @@ func (s *ServerImpl) NotifyTaskStatus(ctx context.Context,
 	return &pb.NotifyMessageResponse{Success: true}, nil
 }
 
+// RenewLease is used to renew the lease of a task.
+func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (*pb.RenewLeaseResponse, error) {
+	// worker should ask for a new lease before the current lease expires
+	err := data_structure_redis.SetLeaseWithID(in.Id, in.ExecId,
+		in.LeaseDuration.AsDuration())
+	redisThroughput.Inc()
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"function": "RenewLease",
+		}).Errorf("Renew Lease failed %v", err)
+		return &pb.RenewLeaseResponse{Success: false},
+			fmt.Errorf("lease for update %s has expired", in.Id)
+	}
+	logger.WithFields(logrus.Fields{
+		"function": "RenewLease",
+	}).Infof("Renew Lease Request fraom Task: %s with execID: %s SUCCEED", in.Id, in.ExecId)
+	return &pb.RenewLeaseResponse{Success: true}, nil
+}
+
+func getJobInfo(data interface{}) (int, int, time.Time) {
+	switch v := data.(type) {
+	case *constants.TaskCache:
+		return v.JobType, v.RetriesLeft, v.ExecutionTime
+	case *constants.RunTimeTask:
+		return v.JobType, v.RetriesLeft, v.ExecutionTime
+	default:
+		panic("unsupported data type")
+	}
+}
+
+// handleJobSucceed handles the job succeed case.
 func handleJobSucceed(ctx context.Context, task *constants.TaskCache) error {
 	logger.WithFields(logrus.Fields{
 		"function": "handleJobSucceed",
@@ -1059,6 +1051,7 @@ func handleJobSucceed(ctx context.Context, task *constants.TaskCache) error {
 	return handleOneTimeJobSucceed(ctx, task)
 }
 
+// handleOneTimeJobSucceed handles the one time job succeed case.
 func handleOneTimeJobSucceed(ctx context.Context, task *constants.TaskCache) error {
 	logger.WithFields(logrus.Fields{
 		"function": "handleOneTimeJobSucceed",
@@ -1084,6 +1077,7 @@ func handleOneTimeJobSucceed(ctx context.Context, task *constants.TaskCache) err
 	return nil
 }
 
+// handleRecurringJobSucceed handles the recurring job succeed case.
 func handleRecurringJobSucceed(ctx context.Context, task *constants.TaskCache) error {
 	logger.WithFields(logrus.Fields{
 		"function": "handleRecurringJobSucceed",
@@ -1129,20 +1123,79 @@ func handleRecurringJobSucceed(ctx context.Context, task *constants.TaskCache) e
 	return nil
 }
 
-func (s *ServerImpl) RenewLease(ctx context.Context, in *pb.RenewLeaseRequest) (*pb.RenewLeaseResponse, error) {
-	// worker should ask for a new lease before the current lease expires
-	err := data_structure_redis.SetLeaseWithID(in.Id, in.ExecId,
-		in.LeaseDuration.AsDuration())
-	redisThroughput.Inc()
-	if err != nil {
-		logger.WithFields(logrus.Fields{
-			"function": "RenewLease",
-		}).Errorf("Renew Lease failed %v", err)
-		return &pb.RenewLeaseResponse{Success: false},
-			fmt.Errorf("lease for update %s has expired", in.Id)
+// checkJobCompletelyFailed checks if the job is completely failed.
+func checkJobCompletelyFailed(data interface{}) bool {
+	jobType, retriesLeft, executionTime := getJobInfo(data)
+	if jobType == constants.OneTime {
+		if checkOneTimeJobOutdated(executionTime) {
+			// update completely failed need to update all information for report user.
+			return true
+		} else {
+			return retriesLeft <= 0
+		}
+	} else {
+		if checkRecurringJobOutdated(executionTime) {
+			return true
+		} else {
+			return retriesLeft <= 0
+		}
 	}
+}
+
+// checkOneTimeJobOutdated check if the task is outdated,
+// current time is later than the execution time
+func checkOneTimeJobOutdated(executionTime time.Time) bool {
+	diff := time.Now().UTC().Sub(executionTime)
+	return diff > constants.ONE_TIME_JOB_RETRY_TIME
+}
+
+// checkRecurringJobOutdated check if the task is outdated,
+// current time is later than the execution time
+func checkRecurringJobOutdated(executionTime time.Time) bool {
+	diff := time.Now().UTC().Sub(executionTime)
+	return diff > constants.RECURRING_JOB_RETRY_TIME
+}
+
+// handleWhenManagerShutDown handles the situation when manager is shut down.
+func handleWhenManagerShutDown(control ServerControlInterface) {
+	if err := databaseClient.Close(); err != nil {
+		logger.WithFields(logrus.Fields{
+			"function": "OnStoppedLeading",
+			"error":    err,
+		}).Error("Error closing database client")
+	}
+
+	if err := redisClient.Close(); err != nil {
+		logger.WithFields(logrus.Fields{
+			"function": "OnStoppedLeading",
+			"error":    err,
+		}).Error("Error closing redis client")
+	}
+
+	if err := control.StopAPIServer(); err != nil {
+		logger.WithFields(logrus.Fields{
+			"function": "OnStoppedLeading",
+			"error":    err,
+		}).Error("Error stopping API server")
+	}
+}
+
+// addNewJobToRedis adds a new job to redis.
+func addNewJobToRedis(taskDB *constants.TaskDB) {
+	// generate update for cache:
+	taskCache := generator.GenerateTaskCache(
+		taskDB.ID,
+		taskDB.JobType,
+		taskDB.CronExpr,
+		taskDB.ExecutionTime,
+		taskDB.Retries,
+		taskDB.Payload)
+	taskCache.ExecutionID = generator.GenerateExecutionID()
+	redisThroughput.Inc()
+	data_structure_redis.AddJob(taskCache)
 	logger.WithFields(logrus.Fields{
-		"function": "RenewLease",
-	}).Infof("Renew Lease Request fraom Task: %s with execID: %s SUCCEED", in.Id, in.ExecId)
-	return &pb.RenewLeaseResponse{Success: true}, nil
+		"function": "addNewJobToRedis",
+		"taskID":   taskCache.ID,
+		"QLen":     data_structure_redis.GetQLength(),
+	}).Info("added new job to redis")
 }

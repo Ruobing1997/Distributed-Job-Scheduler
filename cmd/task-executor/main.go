@@ -1,3 +1,5 @@
+// main for task-executor service is the entry point of worker server
+// it provides access using cobra.
 package main
 
 import (

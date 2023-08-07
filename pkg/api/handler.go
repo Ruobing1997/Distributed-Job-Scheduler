@@ -1,3 +1,6 @@
+// Package api handles all the api requests
+// It provides CRUD operations for tasks.
+
 package api
 
 import (

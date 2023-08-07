@@ -1,3 +1,6 @@
+// Package data_structure_redis Description: redis data structure
+// The redis will be used as a priority queue to store the tasks
+// and a map to store the task id and the task itself.
 package data_structure_redis
 
 import (
@@ -15,6 +18,7 @@ import (
 var client *redis.Client
 var Qlen int64
 
+// Init initializes the redis client
 func Init() *redis.Client {
 
 	redisAddr := os.Getenv("REDIS_ADDR")
@@ -39,6 +43,7 @@ func Init() *redis.Client {
 	return maximumConnectionRetry()
 }
 
+// maximumConnectionRetry tries to connect to redis for 5 times
 func maximumConnectionRetry() *redis.Client {
 	for i := 0; i < 5; i++ {
 		pong, err := client.Ping(context.Background()).Result()
@@ -54,6 +59,7 @@ func maximumConnectionRetry() *redis.Client {
 	return nil
 }
 
+// AddJob adds a new job to the redis priority queue and map
 func AddJob(e *constants.TaskCache) {
 	if (client.HExists(context.Background(), REDIS_MAP_KEY, e.ID)).Val() {
 		log.Printf("task %s already exists in redis", e.ID)
@@ -72,6 +78,7 @@ func AddJob(e *constants.TaskCache) {
 	client.HSet(context.Background(), REDIS_MAP_KEY, e.ID, data)
 }
 
+// AddRetry adds a new job to the redis list
 func AddRetry(e *constants.TaskCache) {
 	data, err := json.Marshal(e)
 	if err != nil {
@@ -81,6 +88,7 @@ func AddRetry(e *constants.TaskCache) {
 	client.Publish(context.Background(), REDIS_CHANNEL, RETRY_AVAILABLE)
 }
 
+// PopRetry pops a new job from the redis list
 func PopRetry() (*constants.TaskCache, error) {
 	result, err := client.RPop(context.Background(), REDIS_RETRY_KEY).Result()
 	if err != nil {
@@ -102,6 +110,7 @@ func PopRetry() (*constants.TaskCache, error) {
 	return &e, nil
 }
 
+// PopNextJob pops a new job from the redis priority queue
 func PopNextJob() *constants.TaskCache {
 	result, err := client.ZPopMin(context.Background(), REDIS_PQ_KEY).Result()
 	if err != nil {
@@ -134,72 +143,18 @@ func RemoveJobByID(id string) {
 	}
 }
 
-func GetJobByID(id string) *constants.TaskCache {
-	jobData, err := client.HGet(context.Background(), REDIS_MAP_KEY, id).Result()
-	if err != nil {
-		log.Printf("get job data failed: %v", err)
-	}
-	var e constants.TaskCache
-	if err := json.Unmarshal([]byte(jobData), &e); err != nil {
-		log.Printf("unmarshal update cache failed: %v", err)
-	}
-	return &e
-}
-
+// CheckTasksInDuration checks if the task is in the duration
 func CheckTasksInDuration(executionTime time.Time, duration time.Duration) bool {
 	now := time.Now().UTC()
 	return executionTime.After(now) && executionTime.Before(now.Add(duration))
 }
 
+// GetQLength returns the length of the priority queue
 func GetQLength() int64 {
 	return Qlen
 }
 
-func GetNextJob() *constants.TaskCache {
-	result, err := client.ZRange(context.Background(), REDIS_PQ_KEY, 0, 0).Result()
-	if err != nil {
-		log.Printf("get next job failed: %v", err)
-	}
-
-	// Decode the job name and execution time from the JSON string
-	var e constants.TaskCache
-	if len(result) > 0 {
-		if err := json.Unmarshal([]byte(result[0]), &e); err != nil {
-			log.Printf("unmarshal update cache failed: %v", err)
-		}
-	} else {
-		return nil
-	}
-	return &e
-}
-
-func CheckWithinThreshold(executionTime time.Time) bool {
-	result := time.Until(executionTime) <= PROXIMITY_THRESHOLD
-	return result
-}
-
-func GetJobsForDispatchWithBuffer() []*constants.TaskCache {
-	adjustedTime := time.Now().UTC()
-	var scoreRange = &redis.ZRangeBy{
-		Min: "-inf",
-		Max: fmt.Sprintf("%d", adjustedTime.Unix()),
-	}
-	results, err := client.ZRangeByScoreWithScores(context.Background(), REDIS_PQ_KEY, scoreRange).Result()
-	if err != nil {
-		log.Printf("get next job failed: %v", err)
-	}
-
-	var matureTasks []*constants.TaskCache
-	for _, result := range results {
-		var e constants.TaskCache
-		if err := json.Unmarshal([]byte(result.Member.(string)), &e); err != nil {
-			log.Printf("unmarshal update cache failed: %v", err)
-		}
-		matureTasks = append(matureTasks, &e)
-	}
-	return matureTasks
-}
-
+// PopJobsForDispatchWithBuffer pops a batch of jobs from the redis priority queue
 func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 	adjustedTime := time.Now().UTC()
 	var scoreRange = &redis.ZRangeBy{
@@ -230,6 +185,7 @@ func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
 	return matureTasks
 }
 
+// SetLeaseWithID sets a lease for a task
 func SetLeaseWithID(taskID string, execID string, duration time.Duration) error {
 	log.Printf("----------------------------")
 	log.Printf("set lease for task %s + execute %s", taskID, execID)
@@ -242,6 +198,7 @@ func SetLeaseWithID(taskID string, execID string, duration time.Duration) error 
 	return nil
 }
 
+// RemoveLeaseWithID removes a lease for a task
 func RemoveLeaseWithID(ctx context.Context, taskID string, execID string) error {
 	leaseKey := fmt.Sprintf("lease:task:%sexecute:%s", taskID, execID)
 	err := client.Del(ctx, leaseKey).Err()

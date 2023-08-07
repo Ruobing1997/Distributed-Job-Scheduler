@@ -179,7 +179,7 @@ func CheckWithinThreshold(executionTime time.Time) bool {
 }
 
 func GetJobsForDispatchWithBuffer() []*constants.TaskCache {
-	adjustedTime := time.Now().UTC().Add(DISPATCHBUFFER)
+	adjustedTime := time.Now().UTC()
 	var scoreRange = &redis.ZRangeBy{
 		Min: "-inf",
 		Max: fmt.Sprintf("%d", adjustedTime.Unix()),
@@ -201,7 +201,7 @@ func GetJobsForDispatchWithBuffer() []*constants.TaskCache {
 }
 
 func PopJobsForDispatchWithBuffer() []*constants.TaskCache {
-	adjustedTime := time.Now().UTC().Add(DISPATCHBUFFER)
+	adjustedTime := time.Now().UTC()
 	var scoreRange = &redis.ZRangeBy{
 		Min:   "-inf",
 		Max:   fmt.Sprintf("%d", adjustedTime.Unix()),

@@ -16,5 +16,5 @@ const REDIS_LEASE_CHANNEL = "task_lease_channel"
 const REDIS_LEASE_MAP_VALUE_PROCESSING = "1"
 
 // TODO: add ahead time after testing
-const PROXIMITY_THRESHOLD = 2 * time.Second
+const PROXIMITY_THRESHOLD = 1 * time.Second
 const DISPATCHBUFFER = 2 * time.Second

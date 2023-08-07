@@ -18,6 +18,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"net"
 	"os"
 	"strings"
@@ -120,94 +122,93 @@ func releaseGRPCConnection(wrapper *clientWrapper) {
 	connPool = append(connPool, *wrapper)
 }
 
-//
-//func InitLeaderElection(control ServerControlInterface) {
-//	config, err := rest.InClusterConfig()
-//	if err != nil {
-//		logger.WithFields(logrus.Fields{
-//			"function": "InitLeaderElection",
-//			"result":   "failed to get k8s config",
-//			"error":    err,
-//		}).Fatal("failed to get k8s config")
-//	}
-//	clientset, err := kubernetes.NewForConfig(config)
-//	if err != nil {
-//		logger.WithFields(logrus.Fields{
-//			"function": "InitLeaderElection",
-//			"result":   "failed to get k8s client",
-//			"error":    err,
-//		}).Fatal("failed to get k8s client")
-//	}
-//
-//	lock := &resourcelock.LeaseLock{
-//		LeaseMeta: metav1.ObjectMeta{
-//			Name:      "manager-lock",
-//			Namespace: "supernova",
-//		},
-//		Client: clientset.CoordinationV1(),
-//		LockConfig: resourcelock.ResourceLockConfig{
-//			Identity: managerID,
-//		},
-//	}
-//
-//	leaderelection.RunOrDie(context.Background(), leaderelection.LeaderElectionConfig{
-//		Lock:            lock,
-//		ReleaseOnCancel: true,
-//		LeaseDuration:   60 * time.Second,
-//		RenewDeadline:   30 * time.Second,
-//		RetryPeriod:     5 * time.Second,
-//		Callbacks: leaderelection.LeaderCallbacks{
-//			OnStartedLeading: func(ctx context.Context) {
-//				logger.WithFields(logrus.Fields{
-//					"function": "InitLeaderElection",
-//					"manager":  managerID,
-//					"PodIP":    os.Getenv("POD_IP"),
-//				}).Info(fmt.Sprintf("manager: %v started leading", managerID))
-//				updateEndpointsWithLeaderIP(os.Getenv("POD_IP"))
-//				InitConnection()
-//				PrometheusManagerInit()
-//				go InitManagerGRPC()
-//				Start()
-//				control.StartAPIServer()
-//			},
-//			OnStoppedLeading: func() {
-//				logger.WithFields(logrus.Fields{
-//					"function": "OnStoppedLeading",
-//					"manager":  managerID,
-//				}).Info("Manager stopped leading")
-//
-//				if err := databaseClient.Close(); err != nil {
-//					logger.WithFields(logrus.Fields{
-//						"function": "OnStoppedLeading",
-//						"error":    err,
-//					}).Error("Error closing database client")
-//				}
-//
-//				if err := redisClient.Close(); err != nil {
-//					logger.WithFields(logrus.Fields{
-//						"function": "OnStoppedLeading",
-//						"error":    err,
-//					}).Error("Error closing redis client")
-//				}
-//
-//				if err := control.StopAPIServer(); err != nil {
-//					logger.WithFields(logrus.Fields{
-//						"function": "OnStoppedLeading",
-//						"error":    err,
-//					}).Error("Error stopping API server")
-//				}
-//			},
-//			OnNewLeader: func(identity string) {
-//				if identity != managerID {
-//					logger.WithFields(logrus.Fields{
-//						"function": "OnNewLeader",
-//						"leader":   identity,
-//					}).Info("New leader elected")
-//				}
-//			},
-//		},
-//	})
-//}
+func InitLeaderElection(control ServerControlInterface) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"function": "InitLeaderElection",
+			"result":   "failed to get k8s config",
+			"error":    err,
+		}).Fatal("failed to get k8s config")
+	}
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		logger.WithFields(logrus.Fields{
+			"function": "InitLeaderElection",
+			"result":   "failed to get k8s client",
+			"error":    err,
+		}).Fatal("failed to get k8s client")
+	}
+
+	lock := &resourcelock.LeaseLock{
+		LeaseMeta: metav1.ObjectMeta{
+			Name:      "manager-lock",
+			Namespace: "supernova",
+		},
+		Client: clientset.CoordinationV1(),
+		LockConfig: resourcelock.ResourceLockConfig{
+			Identity: managerID,
+		},
+	}
+
+	leaderelection.RunOrDie(context.Background(), leaderelection.LeaderElectionConfig{
+		Lock:            lock,
+		ReleaseOnCancel: true,
+		LeaseDuration:   60 * time.Second,
+		RenewDeadline:   30 * time.Second,
+		RetryPeriod:     5 * time.Second,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(ctx context.Context) {
+				logger.WithFields(logrus.Fields{
+					"function": "InitLeaderElection",
+					"manager":  managerID,
+					"PodIP":    os.Getenv("POD_IP"),
+				}).Info(fmt.Sprintf("manager: %v started leading", managerID))
+				updateEndpointsWithLeaderIP(os.Getenv("POD_IP"))
+				InitConnection()
+				PrometheusManagerInit()
+				go InitManagerGRPC()
+				Start()
+				control.StartAPIServer()
+			},
+			OnStoppedLeading: func() {
+				logger.WithFields(logrus.Fields{
+					"function": "OnStoppedLeading",
+					"manager":  managerID,
+				}).Info("Manager stopped leading")
+
+				if err := databaseClient.Close(); err != nil {
+					logger.WithFields(logrus.Fields{
+						"function": "OnStoppedLeading",
+						"error":    err,
+					}).Error("Error closing database client")
+				}
+
+				if err := redisClient.Close(); err != nil {
+					logger.WithFields(logrus.Fields{
+						"function": "OnStoppedLeading",
+						"error":    err,
+					}).Error("Error closing redis client")
+				}
+
+				if err := control.StopAPIServer(); err != nil {
+					logger.WithFields(logrus.Fields{
+						"function": "OnStoppedLeading",
+						"error":    err,
+					}).Error("Error stopping API server")
+				}
+			},
+			OnNewLeader: func(identity string) {
+				if identity != managerID {
+					logger.WithFields(logrus.Fields{
+						"function": "OnNewLeader",
+						"leader":   identity,
+					}).Info("New leader elected")
+				}
+			},
+		},
+	})
+}
 
 func Start() {
 	startedChan := make(chan bool, 4)
@@ -642,7 +643,7 @@ func handleTask(ctx context.Context, task *constants.TaskCache) {
 	go func() {
 		handoutResult := <-handoutTaskDone
 		logger.WithFields(logrus.Fields{
-			"function": "executeMatureTasks",
+			"function": "handleTask",
 		}).Infof("dispatch task: %s and executing by %s, found error: %v with status %s",
 			task.ID, handoutResult.workerID, handoutResult.err, constants.StatusMap[handoutResult.status])
 
@@ -748,9 +749,8 @@ func MonitorHeadNode() {
 	}).Info("Start monitoring head node")
 
 	for {
-		headNode := data_structure_redis.GetNextJob()
-		if headNode != nil && data_structure_redis.CheckWithinThreshold(headNode.ExecutionTime) {
-			tasks := data_structure_redis.PopJobsForDispatchWithBuffer()
+		tasks := data_structure_redis.PopJobsForDispatchWithBuffer()
+		if len(tasks) > 0 {
 			redisThroughput.Add(float64(len(tasks)))
 			logger.WithFields(logrus.Fields{
 				"function": "MonitorHeadNode",
@@ -759,6 +759,7 @@ func MonitorHeadNode() {
 				go handleTask(context.Background(), task)
 			}
 		}
+		time.Sleep(time.Second)
 	}
 }
 

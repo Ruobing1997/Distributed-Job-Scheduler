@@ -1,6 +1,6 @@
 DO $$
 DECLARE
-i INTEGER := 0;
+i INTEGER := 2000;
 BEGIN
     WHILE i < 4000 LOOP
         INSERT INTO job_full_info(

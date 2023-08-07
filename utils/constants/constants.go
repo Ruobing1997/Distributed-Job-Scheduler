@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// TODO: （急迫）重改后的逻辑不需要添加这么多了，
-// 这些信息应该是在任务执行表中，需要修改这个struct以及对应的db结构
 type TaskDB struct {
 	ID                    string
 	JobName               string
@@ -16,7 +14,7 @@ type TaskDB struct {
 	CallbackURL           string
 	Status                int // pending, completed, failed
 	ExecutionTime         time.Time
-	PreviousExecutionTime time.Time // 主要解决jiffy老师提到的问题：Leader故障切换期间到期的时间都被视为执行过
+	PreviousExecutionTime time.Time
 	CreateTime            time.Time
 	UpdateTime            time.Time
 	Retries               int

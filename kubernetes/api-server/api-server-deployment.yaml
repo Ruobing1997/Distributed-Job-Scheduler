@@ -17,6 +17,6 @@ spec:
     spec:
       containers:
         - name: api-server
-          image: morefun-supernova-api:3.0
+          image: morefun-supernova-api:4.1
           ports:
             - containerPort: 8080

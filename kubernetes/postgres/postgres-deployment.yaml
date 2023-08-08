@@ -18,14 +18,14 @@ spec:
       containers:
         - name: postgres
           image: postgres:latest
+          args:
+            - -c
+            - max_connections=3000
           env:
             - name: POSTGRES_USER
               value: "postgres"
             - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: postgres-password
+              value: "970409"
             - name: POSTGRES_DB
               value: "postgres"
           volumeMounts:

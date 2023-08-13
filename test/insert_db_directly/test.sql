@@ -20,8 +20,8 @@ BEGIN
         ) VALUES (
             'job_' || i::TEXT,              -- 使用i作为id的后缀
             'Job Name ' || i::TEXT,         -- 使用i作为job_name的后缀
-            0,                              -- 假设的job_type
-            '32 17 * * *',                  -- 执行一次的cron表达式
+            1,                              -- 假设的job_type
+            '* * * * * *',                  -- 执行一次的cron表达式
             0,                              -- execute_format为0
             'echo 1',                       -- 脚本内容
             '',                           -- callback_url，如果有可以填写

@@ -6,7 +6,7 @@ metadata:
     app: manager
   namespace: supernova
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: manager
@@ -30,7 +30,7 @@ spec:
             - /app/manager
             - start
           name: manager
-          image: morefun-supernova-manager:3.0
+          image: morefun-supernova-manager:4.1
           env:
             - name: REDIS_ADDR
               value: "redis:6379"
